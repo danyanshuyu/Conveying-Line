@@ -1,0 +1,25 @@
+*** Creating Trace Output File '..\Obj\CH563.tra' Ok.
+### Preparing for ADS-LD.
+### Creating ADS-LD Command Line
+### List of Objects: adding '"..\obj\ch563.o"'
+### List of Objects: adding '"..\obj\main.o"'
+### List of Objects: adding '"..\obj\plc.o"'
+### List of Objects: adding '"..\User\ISPXT563.O"'
+### List of Objects: adding '"..\PUB\CH563NET.lib"'
+### List of Objects: adding '"..\obj\startup.o"'
+### List of Objects: adding '"..\obj\sysfreq.o"'
+### ADS-LD Command completed:
+--cpu ARM966E-S "..\obj\ch563.o" "..\obj\main.o" "..\obj\plc.o" "..\User\ISPXT563.O" "..\PUB\CH563NET.lib" "..\obj\startup.o" "..\obj\sysfreq.o" --library_type=microlib --strict --scatter "..\SRC\CH563D64.SCF" 
+--autoat --summary_stderr --info summarysizes --map --xref --callgraph --symbols 
+--info sizes --info totals --info unused --info veneers 
+ --list ".\CH563.map" -o "..\Obj\CH563.axf"### Preparing Environment (PrepEnvAds)
+### ADS-LD Output File: '..\Obj\CH563.axf'
+### ADS-LD Command File: '..\Obj\CH563.lnp'
+### Checking for dirty Components...
+### Creating CmdFile '..\Obj\CH563.lnp', Handle=0x000001B4
+### Writing '.lnp' file
+### ADS-LD Command file '..\Obj\CH563.lnp' is ready.
+### ADS-LD: About to start ADS-LD Thread.
+### ADS-LD: executed with 0 errors
+### Updating obj list
+### LDADS_file() completed.

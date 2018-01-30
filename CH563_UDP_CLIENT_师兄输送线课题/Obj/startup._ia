@@ -1,0 +1,1 @@
+--cpu ARM966E-S -g --apcs=interwork --pd "__MICROLIB SETA 1" -I "C:\Program Files (x86)\keil\ARM\INC" -I "C:\Program Files (x86)\keil\ARM\INC\ST\91x" --list ".\STARTUP.lst" --xref -o "..\Obj\STARTUP.o" --depend "..\Obj\STARTUP.d" "..\SRC\STARTUP.S"
