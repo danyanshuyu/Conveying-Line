@@ -1,1 +1,0 @@
-..\Obj\STARTUP.o: ..\SRC\STARTUP.S

@@ -1,1 +1,0 @@
--c --cpu ARM966E-S -D__MICROLIB -g -W -O0 --apcs=interwork -I..\User -I..\PUB -I..\SRC -I "C:\Program Files (x86)\keil\ARM\INC" -I "C:\Program Files (x86)\keil\ARM\INC\ST\91x" -o "..\Obj\sysfreq.o" --omf_browse "..\Obj\sysfreq.crf" --depend "..\Obj\sysfreq.d" "..\SRC\SYSFREQ.C"

@@ -1,4 +1,0 @@
---cpu ARM966E-S "..\obj\ch563.o" "..\obj\main.o" "..\obj\plc.o" "..\User\ISPXT563.O" "..\PUB\CH563NET.lib" "..\obj\startup.o" "..\obj\sysfreq.o" --library_type=microlib --strict --scatter "..\SRC\CH563D64.SCF" 
---autoat --summary_stderr --info summarysizes --map --xref --callgraph --symbols 
---info sizes --info totals --info unused --info veneers 
- --list ".\CH563.map" -o "..\Obj\CH563.axf"
