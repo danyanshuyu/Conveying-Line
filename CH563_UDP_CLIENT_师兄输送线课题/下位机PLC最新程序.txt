@@ -89,7 +89,7 @@ void SetValue(UINT16 Num,UINT16 type,UINT16 Data)			// ²ÎÊýËµÃ÷£ºPLC±äÁ¿ºÅ£¬PLC±
 
 /*¸Ãº¯ÊýÓÃÓÚ¼ÆÊýÆ÷ÔËËã£¬¼ÆÊýÆ÷×÷ÓÃ£º¼ÆÊýÊäÈëÌõ¼þÂú×ãµÄ´ÎÊý£¬µ±¼ÆÊý´ÎÊýµ½Ê±Êä³öÓÐÐ§£ºÒªÇø±ðÓÚ¶¨Ê±Æ÷µÄ¹¦ÄÜ*/
 
-void CntProcess(UINT16 stack,UINT32 Cnt_set,UINT16 Cnt_num,UINT16 Rst)		// ¼ÆÊýÆ÷¼ÆÊýÌõ¼þ£¬¼ÆÊýÖµ£¬¼ÆÊýÆ÷ºÅ£¬¸´Î»
+void CntProcess(UINT16 stack,UINT16 Cnt_set,UINT16 Cnt_num,UINT16 Rst)		// ¼ÆÊýÆ÷¼ÆÊýÌõ¼þ£¬¼ÆÊýÖµ£¬¼ÆÊýÆ÷ºÅ£¬¸´Î»
 {	CtrValue *pCtrValue;									// ¶¨Òå¼ÆÊýÆ÷½á¹¹ÌåÖ¸Õë±äÁ¿
 	UINT32 *pCtrValueAndFlag;								// ¶¨ÒåÖ¸Õë±äÁ¿£¬ÓÃÓÚ´æ·Å¼ÆÊýÆ÷ÐòºÅµÄµØÖ·
 
@@ -141,7 +141,7 @@ void CntProcess(UINT16 stack,UINT32 Cnt_set,UINT16 Cnt_num,UINT16 Rst)		// ¼ÆÊýÆ
 
 /*ÏÂÃæº¯ÊýÓÃÓÚ´¦ÀíPLC¶¨Ê±Æ÷²Ù×÷*/
 
-void TimerProcess(UINT16 stack,UINT32 Timer_set,UINT16 Timer_num)		// ²ÎÊýËµÃ÷£º¶¨Ê±Æ÷ÅÐ¶ÏÌõ¼þ£¬¶¨Ê±Æ÷¼ÆÊýÖµ£¬¶¨Ê±Æ÷ºÅ
+void TimerProcess(UINT16 stack,UINT16 Timer_set,UINT16 Timer_num)		// ²ÎÊýËµÃ÷£º¶¨Ê±Æ÷ÅÐ¶ÏÌõ¼þ£¬¶¨Ê±Æ÷¼ÆÊýÖµ£¬¶¨Ê±Æ÷ºÅ
 {	UINT32 *pTimerValueAndFlag ;							// ÓÃÓÚ¶¨Ê±Æ÷²ÎÊýÄÚ´æ
 	Timer *pTimer ;											// ¶¨Òå¶¨Ê±Æ÷Êý¾ÝÖ¸Õë
 
