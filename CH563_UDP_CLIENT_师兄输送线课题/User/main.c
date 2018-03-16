@@ -17,7 +17,7 @@
 #include "ISPXT563.H"
 #include "Extern_Variables.h"
 
-#define CH563NET_DBG                          1
+#define CH563NET_DBG                      1    
 
 /* ±äÁ¿¶¨Òå */
 volatile BUFF_UDP_DATA Buff_Tx;			                                        //´ÓÉÏÎ»»ú½ÓÊÕµÄ»º´æÊý¾Ý
@@ -26,8 +26,15 @@ UINT32  LENGH_TX;														//Êý¾Ý´¦Àíºó£¬Socket¿âº¯Êý·¢ËÍ¸øÉÏÎ»»úËùµ÷ÓÃµÄ×Ö·
 UINT16  EEPROM_CODE[512]; 		                                        //1024×Ö½Ú»º´æ£¬ÓÃÓÚ´æ·ÅPLC´úÂë£¬ÔÚRAMÖÐÔËÐÐ
 UINT8   PLC_Count = 0;													//PLCÉ¨ÃèÊ±¼ä¼ÆÊý£¬Âú×ã´ÎÊýÊ±£¬ÏòÉÏÎ»»ú·¢ËÍÒ»´Î¿ª¹ØÁ¿Êä³ö×´Ì¬
 
+
+UINT8  PLC_PowerOn_Init_Flag = 1;
+UINT32  PLC_PowerOn_Init_Count = 0;
+
 /* º¯ÊýÉùÃ÷ */
 UINT8 Reverse(UINT8 a,UINT8 n );
+void BarCode_Upload(UINT8 RcvNUM);
+void SetOutput(UINT32 Value);
+void PLC_PowerOn_Init();	
 
 /*******************************************************************************
 * Function Name  : Init_GPIO
@@ -112,6 +119,164 @@ int fputc( int c, FILE *f )
     return( c );
 }
 
+
+/*******************************************************************************
+* Function Name  : Uart1_Init
+* Description    : ´®¿Ú1³õÊ¼»¯
+* Input          : baud-´®¿Ú²¨ÌØÂÊ£¬×î¸ßÎªÖ÷Æµ1/8
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void Uart1_Init( UINT32 baud )
+{
+    UINT32    x, x2;
+
+    x = 10 * FREQ_SYS * 2 / 16 / baud;                                                /* 115200bps */
+    x2 = x % 10;
+    x /= 10;                                                                        
+    if ( x2 >= 5 ) x ++; 															/* ËÄÉáÎåÈë */
+    R8_UART1_LCR = RB_LCR_DLAB;                                                 /* DLABÎ»ÖÃ1 */
+    R8_UART1_DIV = 1;                                                           /* Ô¤·ÖÆµ */
+    R8_UART1_DLM = x>>8;
+    R8_UART1_DLL = x&0xff;
+
+    R8_UART1_LCR = RB_LCR_WORD_SZ ;                                             /* ÉèÖÃ×Ö½Ú³¤¶ÈÎª8    */
+    R8_UART1_FCR = RB_FCR_FIFO_TRIG|RB_FCR_TX_FIFO_CLR|RB_FCR_RX_FIFO_CLR |    
+                   RB_FCR_FIFO_EN ;                                             /* ÉèÖÃFIFO´¥·¢µãÎª28£¬Çå·¢ËÍºÍ½ÓÊÕFIFO£¬FIFOÊ¹ÄÜ */
+    R8_UART1_IER = RB_IER_TXD_EN | RB_IER_LINE_STAT |RB_IER_THR_EMPTY | 
+                   RB_IER_RECV_RDY  ;                                           /* TXD enable */
+    R8_UART1_MCR = RB_MCR_OUT2;                                                
+    R8_INT_EN_IRQ_0 |= RB_IE_IRQ_UART1;                                            /* ´®¿ÚÖÐ¶ÏÊä³öÊ¹ÄÜ */
+    R32_PB_SMT |= RXD1|TXD1;                                                    /* RXD1 schmitt input, TXD1 slow rate */
+    R32_PB_PD  &= ~ RXD1;                                                       /* disable pulldown for RXD1, keep pullup */
+    R32_PB_DIR |= TXD1;                                                         /* TXD1 output enable */
+}
+
+/*******************************************************************************
+* Function Name  : UART1_SendByte
+* Description    : ´®¿Ú1·¢ËÍÒ»×Ö½Ú×Ó³ÌÐò
+* Input          : dat -Òª·¢ËÍµÄÊý¾Ý
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void UART1_SendByte( UINT8 dat )   
+{        
+    R8_UART1_THR  = dat;
+    while( ( R8_UART1_LSR & RB_LSR_TX_ALL_EMP ) == 0 );                         /* µÈ´ýÊý¾Ý·¢ËÍ */       
+}
+
+/*******************************************************************************
+* Function Name  : UART1_SendStr
+* Description    : ´®¿Ú1·¢ËÍ×Ö·û´®×Ó³ÌÐò
+* Input          : *str -Òª·¢ËÍ×Ö·û´®µÄÖ¸Õë
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void UART1_SendStr( UINT8 *str )   
+{
+    while( 1 ){
+        if( *str == '\0' ) break;
+        UART1_SendByte( *str++ );
+    }
+}
+
+/*******************************************************************************
+* Function Name  : UART1_RcvByte
+* Description    : ´®¿Ú1½ÓÊÕÒ»×Ö½Ú×Ó³ÌÐò
+* Input          : None
+* Output         : None
+* Return         : Rcvdat -½ÓÊÕµ½µÄÊý¾Ý
+*******************************************************************************/
+
+UINT8 UART1_RcvByte( void )    
+{
+    UINT8 Rcvdat = 0;
+    
+    if( !( ( R8_UART1_LSR  ) & ( RB_LSR_OVER_ERR |RB_LSR_PAR_ERR  | RB_LSR_FRAME_ERR |  RB_LSR_BREAK_ERR  ) ) ){
+        while( ( R8_UART1_LSR & RB_LSR_DATA_RDY  ) == 0 );                      /* µÈ´ýÊý¾Ý×¼±¸ºÃ */ 
+        Rcvdat = R8_UART1_RBR;                                                  /* ´Ó½ÓÊÕ»º³å¼Ä´æÆ÷¶Á³öÊý¾Ý */ 
+    }
+    else{
+        R8_UART1_RBR;                                                           /* ÓÐ´íÎóÇå³ý */
+    }
+    return( Rcvdat );
+}
+
+/*******************************************************************************
+* Function Name  : Seril1Send
+* Description    : ´®¿Ú1·¢ËÍ¶à×Ö½Ú×Ó³ÌÐò
+* Input          : *Data -´ý·¢ËÍÊý¾ÝÇøÖ¸Õë
+*                  Num   -·¢ËÍÊý¾Ý³¤¶È
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void  Seril1Send( UINT8 *Data, UINT8 Num )                        
+{
+    do{
+        while( ( R8_UART1_LSR & RB_LSR_TX_FIFO_EMP ) == 0 );                    /* µÈ´ýÊý¾Ý·¢ËÍÍê±Ï */ 
+        R8_UART1_THR  = *Data++;  
+    }while( --Num );
+}
+
+/*******************************************************************************
+* Function Name  : Seril1Rcv
+* Description    : ½ûÓÃFIFO,´®¿Ú1½ÓÊÕ¶à×Ö½Ú×Ó³ÌÐò
+* Input          : *pbuf -½ÓÊÕ»º³åÇøÖ¸Õë
+* Output         : None
+* Return         : RcvNum -½ÓÊÕµ½Êý¾ÝµÄÊý¾Ý³¤¶È
+*******************************************************************************/
+
+UINT8  Seril1Rcv( UINT8 *pbuf )    
+{
+    UINT8 RcvNum = 0;
+
+    if( !( ( R8_UART1_LSR  ) & ( RB_LSR_OVER_ERR |RB_LSR_PAR_ERR  | RB_LSR_FRAME_ERR |  RB_LSR_BREAK_ERR  ) ) ){
+        while( ( R8_UART1_LSR & RB_LSR_DATA_RDY  ) == 0 );                      /* µÈ´ýÊý¾Ý×¼±¸ºÃ */ 
+        do{
+            *pbuf++ = R8_UART1_RBR;                                             /* ´Ó½ÓÊÕ»º³å¼Ä´æÆ÷¶Á³öÊý¾Ý */ 
+            RcvNum++;
+        }while( ( R8_UART1_LSR & RB_LSR_DATA_RDY   ) == 0x01 );
+    }
+    else{
+        R8_UART1_RBR;
+    }
+    return( RcvNum );
+}
+
+/*******************************************************************************
+* Function Name  : UART1Send_FIFO
+* Description    : ÆôÓÃFIFO,Ò»´Î×î¶à32×Ö½Ú£¬CH432´®¿Ú1·¢ËÍ¶à×Ö½Ú×Ó³ÌÐò
+* Input          : *Data -´ý·¢ËÍÊý¾ÝÇøÖ¸Õë
+*                  Num   -·¢ËÍÊý¾Ý³¤¶È
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void UART1Send_FIFO( UINT8 *Data, UINT8 Num ) 
+{
+    int i;
+
+    while( 1 ){
+        while( ( R8_UART1_LSR & RB_LSR_TX_ALL_EMP ) == 0 );                     /* µÈ´ýÊý¾Ý·¢ËÍÍê±Ï£¬THR,TSRÈ«¿Õ */
+        if( Num <= 32){                                                         /* FIFO³¤¶ÈÎª32£¬Êý¾Ý³¤¶È²»Âú32×Ö½Ú£¬Ò»´Î·¢ËÍÍê³É */
+            do{
+                R8_UART1_THR=*Data++;
+            }while(--Num) ;
+            break;
+        }
+        else{                                                                   /* FIFO³¤¶ÈÎª32£¬Êý¾Ý³¤¶È³¬¹ý32×Ö½Ú£¬·Ö¶à´Î·¢ËÍ£¬Ò»´Î32×Ö½Ú */
+            for(i=0;i<32;i++){
+                R8_UART1_THR=*Data++;
+            }
+            Num -= 32;
+        }
+    }
+}
+
 /*******************************************************************************
 * Function Name  : CH563_EEPROM
 * Description    : EEPROM²Ù×÷×Ó³ÌÐò
@@ -131,101 +296,76 @@ void CH563_EEPROM( void )
  
 }
 
+
+
 /*******************************************************************************
-* Function Name  : InitTIM1
-* Description    : ³õÊ¼»¯¶¨Ê±Æ÷1£¬¼°ÆäÖÐ¶ÏÅäÖÃ		5ms
+* Function Name  : BarCode_Upload(RcvNum)
+* Description    : ÌõÐÎÂëÊý¾ÝÉÏ´«¸øÉÏÎ»»ú
 * Input          : None
 * Output         : None
 * Return         : None
 *******************************************************************************/
-void InitTIM1(void)
+void BarCode_Upload(UINT8 RcvNUM)
 {
-    R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;
-    R32_TMR1_COUNT = 0x00000000; 
-    R32_TMR1_CNT_END = 0x186a0 * 5;                                             /* ÉèÖÃÎª5MS¶¨Ê± */
-    R8_TMR1_INTER_EN |= RB_TMR_IE_CYC_END;
-    R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN;										//Æô¶¯¶¨Ê±Æ÷¹¦ÄÜ
+    UINT32 len;
+    UINT32 totallen;
+	UINT8  BarCode_Buff_Tx[50];
+    UINT8 *p = BarCode_Buff_Tx;
+	UINT16  LENGH;
+	UINT16  T_IP = (IPAddr[3]>>8 | IPAddr[3]<<8);					// ·¢ËÍµÄÏÂÎ»»úIPµÄµÚËÄÎ»
+	BUFF_UDP_DATA Buff_Tx;			                                //·¢ËÍ¸øÉÏÎ»»úµÄ»º´æÊý¾Ý
+	UINT8 * P_Buff_Tx = (void *)&Buff_Tx;
 
+	UINT8  DES_IP[4] = {192,168,1,100};                                         /* Ä¿µÄIPµØÖ· */
+	UINT8  *ip = DES_IP;
 
-	R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          /* ¿ªÆôTIM1ÖÐ¶Ï */
-    R8_INT_EN_IRQ_GLOB |= RB_IE_IRQ_GLOB;                                       /* ¿ªÆôIRQÈ«¾ÖÖÐ¶Ï */
+	LENGH = RcvNUM+12;
+
+	Buff_Tx.Start =	0xAA;
+	Buff_Tx.Lengh = (LENGH>>8 | LENGH<<8);
+	Buff_Tx.Packet_Flag = 0x0000;
+	Buff_Tx.SourSite = T_IP;
+	Buff_Tx.DesSite = 0xffff;
+	Buff_Tx.Head  =	(BARCODE>>8 | BARCODE<<8);
+	Buff_Tx.End =	0xBB;
+
+	BarCode_Buff_Tx[0] = Buff_Tx.Start;
+	memcpy(BarCode_Buff_Tx+1,P_Buff_Tx+2,10);		      //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½BarCode_Buff_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+	memcpy(BarCode_Buff_Tx+11,Uart_Buf,RcvNUM);
+	BarCode_Buff_Tx[LENGH-1] = Buff_Tx.End;
+		  
+	  len = LENGH;
+	  totallen = len;
+        while(1)
+        {
+           len = totallen;
+           //CH563NET_SocketSend(SocketId,p,&len);                                 /* ½«MyBufÖÐµÄÊý¾Ý·¢ËÍ */
+		   CH563NET_SocketUdpSendTo( SocketId,p,&len,ip,27000);
+           totallen -= len;                                                     /* ½«×Ü³¤¶È¼õÈ¥ÒÔ¼°·¢ËÍÍê±ÏµÄ³¤¶È */
+           p += len;                                                            /* ½«»º³åÇøÖ¸ÕëÆ«ÒÆ*/
+           if(totallen)continue;                                                /* Èç¹ûÊý¾ÝÎ´·¢ËÍÍê±Ï£¬Ôò¼ÌÐø·¢ËÍ*/
+           break;                                                               /* ·¢ËÍÍê±Ï£¬ÍË³ö */
+        }
+
+	
 }
 
-
 /*******************************************************************************
-* Function Name  : Data_Process
-* Description    : ½ÓÊÕÉÏÎ»»úµÄÊý¾Ý²¢´¦Àí
+* Function Name  : ResetOutput()
+* Description    : ÉèÖÃioÈ«²¿Êä³ö
 * Input          : None
 * Output         : None
 * Return         : None
 *******************************************************************************/
-
-void Data_Process()
+void SetOutput(UINT32 Value)
 {
-    UINT16  LENGH  = ( Buff_Rx.Lengh>>8 | Buff_Rx.Lengh<<8 );		// °ü³¤¶È,´æ´¢ÔÚBuff_RxÖÐµÄÊý¾Ý¸ßµÍÎ»ÒÑ±»»¥»»ÁËÒ»´Î£¬ÕâÀïÒª»»»ØÀ´
-	UINT16  R_Head = ( Buff_Rx.Head>>8 | Buff_Rx.Head<<8 );			// ½ÓÊÕµÄ±¨ÎÄÍ·
-	UINT16  T_Head = 0;												// ·¢ËÍµÄ±¨ÎÄÍ·
-	UINT16  T_IP = (IPAddr[3]>>8 | IPAddr[3]<<8);					// ·¢ËÍµÄÏÂÎ»»úIPµÄµÚËÄÎ»
-	UINT16V Input_Port = 0;							                // ¸Ã±äÁ¿¶ÔÓ¦Ó²¼þÖÐ¶Á³öµÄ¿ª¹ØÁ¿ÊäÈë
-	UINT32  Output_Port = 0x00000000;								// ¸Ã±äÁ¿¶ÔÓ¦Ð´ÈëµÄ¿ª¹ØÁ¿Êä³ö
-	int i,Num;
+	UINT32 Output_Port;	
+	int Num;
 	
-    if( R_Head == PLC_Q )									        // ½ÓÊÜµ½µÄ±¨ÎÄÍ·Îª PLC´úÂë
-	{	
-        T_Head = LOWER_ANSW;
-		
-		CH563_EEPROM_ERASE( PLC_Code_Addr,0x1000);                              //  ²Á³ý0x0000µØÖ·¿ªÊ¼µÄ4KÊý¾Ý
-		CH563_EEPROM_WRITE( PLC_Code_Addr,Buff_Rx.Data.PLC_Cmd,LENGH-4 );       //  ½«PLC³ÌÐòÐ´ÈëEEPROMÖÐ£¬ÆðÊ¼µØÖ·0x0000
-		CH563_EEPROM_READ ( 0,EEPROM_CODE,LENGH-4 );                            //  EEPROM¶ÁÈ¡µØÖ·0x0000Êý¾Ý£¬¶ÁÈ¡LENGH-4×Ö½Úµ½EEPROM_CODEÖÐ
-
-		for(i=0;i<(LENGH/2-2);i++)				                                // Ð¡¶ËÄ£Ê½µÄu8 0x12 0x34×ª»»u16 Îª0x3412£¬¹Ê´Ë´¦Òª»»»ØÀ´
-		{
-			EEPROM_CODE[i] = (UINT16)(EEPROM_CODE[i]<<8|EEPROM_CODE[i]>>8);	
-		}
-
-		R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN;									    // ¿ª¶¨Ê±Æ÷1£¬¿ªÊ¼PLC´úÂëÉ¨Ãè
-
-	}
-	if( R_Head == GET_IN )									        // ÉÏÎ»»ú»ñÈ¡¿ª¹ØÁ¿ÊäÈë
-	{	
-		
-		T_Head = GET_IN;
-		Buff_Tx.Lengh = ( 0x0008>>8 | 0x0008<<8 );
-		Buff_Tx.Head  =	T_Head;
-		LENGH_TX = 8;		
-		Input_Port = (UINT16)( (R8_PB_PIN_2 & 0x0F) | ((R8_PD_PIN_1<<4) & 0xF0))<<8 | (UINT16)( (R8_PD_PIN_3>>7) & 0x01 | R8_PB_PIN_0<<1 );	 
-																   // ´ÓGPIOÖÐ¶Á³ö¿ª¹ØÁ¿µÄÐÅºÅ,PB16~19 PD8~11,PD31 PB0~6
-																                              //IN     7~0   ,    15~8
-		//Input_Port = 0xFF00 | ((R8_PD_PIN_0 & 0xFC)>>2);//²¦Âë¿ª¹ØÄ£¿é²âÊÔ
-		//Input_Port = 0xFF00 | ((R8_PB_PIN_1 & 0x03)<<4 | (R8_PB_PIN_1 & 0x30)<<2 | (R8_PB_PIN_1 & 0xC0)>>6 | (R8_PD_PIN_0 & 0x03)<<2);//²¦ÂëÅÌÄ£¿é²âÊÔ
-		Buff_Tx.Data.IO_Data[0] = T_IP;
-		Buff_Tx.Data.IO_Data[1] = Input_Port ;
-		memcpy(FirstBuf_Tx,(void *)&Buff_Tx,LENGH_TX);		   //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
-
-	}
-	if( R_Head == SET_OUT )									        // ÉÏÎ»»úÉèÖÃ¿ª¹ØÁ¿Êä³ö
-	{																//ÉÏÎ»»ú·¢ËÍOUT¸ñÊ½ 7~0,15~8,23~16,31~24(Ö»ÓÐ0~21Î»ÓÐÐ§)
-																	//                0x12   34   56   78
-																	//´¢´æÔÚBuff_Rx.Data.IO_Data[0]ºÍ[1]ÖÐµÄ¸ñÊ½£¨Ð¡¶ËÄ£Ê½£¬¸ß×Ö½Ú¸ßµØÖ·£¬µÍ×Ö½ÚµÍµØÖ·£©
-																	//				  0x3412       0x7856
-		T_Head =  SET_OUT;
-		Buff_Tx.Lengh = ( 0x000a>>8 | 0x000a<<8 );
-		Buff_Tx.Head  =	T_Head;
-		LENGH_TX = 10;
-		
-		/*´ÓÉÏÎ»»ú¹ã²¥Ö¡ÖÐÕÒ³ö±¾µØIP¶ÔÓ¦IO¶Ë¿ÚOutput_PortÖµ*/
-		for(i = 0;i < (LENGH-4)/6;i += 3)
-		{
-			if(Buff_Rx.Data.IO_Data[i] == T_IP)
-			{
-			    Output_Port = Buff_Rx.Data.IO_Data[i+2]<<16 | (UINT32) Buff_Rx.Data.IO_Data[i+1] ;	 
-																   // ¶ÔÓ¦GPIOÖÐÒªÐ´ÈëµÄ¿ª¹ØÁ¿Êä³öÐÅºÅ£¬OUT0~21
-				break;
-			}
-		}
-				
+	Output_Port = Value;
 	
-		/*ÉèÖÃ¶ÔÓ¦Ã¿Ò»¸ö¿ª¹ØÁ¿µÄÖµ*/
+	
+	  /*ÉèÖÃ¶ÔÓ¦Ã¿Ò»¸ö¿ª¹ØÁ¿µÄÖµ*/
 		for(Num=0;Num<=21;Num++)
 		{			
 			if( (Output_Port>>Num & 0x00000001) == 1 )		 // Èç¹û¸ÃÐÅºÅÁ¿ÉèÖÃÎª1£¬ÔòÊä³ö¶ËÎÞÐ§				
@@ -255,19 +395,137 @@ void Data_Process()
 				R8_PA_OUT_2 &= ~(1<<(Num-20));
 			}
 		}
-		Buff_Tx.Data.IO_Data[0] = T_IP ;
-		Buff_Tx.Data.IO_Data[1] = Buff_Rx.Data.IO_Data[i+1] ;
-		Buff_Tx.Data.IO_Data[2] = Buff_Rx.Data.IO_Data[i+2] ;
-		memcpy(FirstBuf_Tx,(void *)&Buff_Tx,LENGH_TX);		   //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+}
+/*******************************************************************************
+* Function Name  : Data_Process
+* Description    : ½ÓÊÕÉÏÎ»»úµÄÊý¾Ý²¢´¦Àí
+* Input          : None
+* Output         : None
+* Return         : None
+*******************************************************************************/
+
+void Data_Process()
+{
+    UINT16  LENGH  = ( Buff_Rx.Lengh>>8 | Buff_Rx.Lengh<<8 );		// °ü³¤¶È,´æ´¢ÔÚBuff_RxÖÐµÄÊý¾Ý¸ßµÍÎ»ÒÑ±»»¥»»ÁËÒ»´Î£¬ÕâÀïÒª»»»ØÀ´
+	UINT16  R_Head = ( Buff_Rx.Head>>8 | Buff_Rx.Head<<8 );			// ½ÓÊÕµÄ±¨ÎÄÍ·
+	UINT16  T_Head = 0;												// ·¢ËÍµÄ±¨ÎÄÍ·
+	UINT16  T_IP = (IPAddr[3]>>8 | IPAddr[3]<<8);					// ·¢ËÍµÄÏÂÎ»»úIPµÄµÚËÄÎ»
+	UINT16V Input_Port = 0;							                // ¸Ã±äÁ¿¶ÔÓ¦Ó²¼þÖÐ¶Á³öµÄ¿ª¹ØÁ¿ÊäÈë
+	UINT32  Output_Port = 0x00000000;								// ¸Ã±äÁ¿¶ÔÓ¦Ð´ÈëµÄ¿ª¹ØÁ¿Êä³ö
+	int i,Num,j;
+	UINT8 * P_Buff_Tx = (void *)&Buff_Tx;							//¶¨ÒåÒ»¸öÖ¸Ïò½á¹¹ÌåBuff_TxÆðÊ¼µØÖ·µÄÖ¸Õë
+
+	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFB ,0xBB};
+	UINT32 len = 12;	
+	UINT8  *p = a;
+	UINT8  DES_IP[4] = {192,168,1,4};                                         /* Ä¿µÄIPµØÖ· */
+	UINT8  *ip = DES_IP;
+
+	
+	Buff_Tx.Start = 0xAA;
+	Buff_Tx.Packet_Flag = 0x0000;
+	Buff_Tx.SourSite = T_IP;
+	Buff_Tx.DesSite = 0xffff;
+	Buff_Tx.End = 0xBB;
+
+
+    if( R_Head == PLC_Q )									        // ½ÓÊÜµ½µÄ±¨ÎÄÍ·Îª PLC´úÂë
+	{	
+		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //¹Ø±ÕTIM1ÖÐ¶Ï   
+		
+		Control_PLC_End = 0;                            //PLCÉ¨ÃèÁ¢¼´ÖÕÖ¹
+		
+		SetOutput(0xffffffff);                          //IOÈ«²¿ÇåÁã
+				
+		memset(EEPROM_CODE,0,sizeof(EEPROM_CODE));     //PLC´úÂë»º´æÇå¿Õ
+		memset(EEPROM_BUFF,0,sizeof(EEPROM_BUFF));     //PLC¼Ä´æÆ÷»º´æÇå¿Õ
+		
+		T_Head = LOWER_ANSW;
+		
+		CH563_EEPROM_ERASE( PLC_Code_Addr,0x1000);                              //  ²Á³ý0x0000µØÖ·¿ªÊ¼µÄ4KÊý¾Ý
+		CH563_EEPROM_WRITE( PLC_Code_Addr,Buff_Rx.Data.PLC_Cmd,LENGH-12 );       //  ½«PLC³ÌÐòÐ´ÈëEEPROMÖÐ£¬ÆðÊ¼µØÖ·0x0000
+		CH563_EEPROM_READ ( 0,EEPROM_CODE,LENGH-12 );                            //  EEPROM¶ÁÈ¡µØÖ·0x0000Êý¾Ý£¬¶ÁÈ¡LENGH-12×Ö½Úµ½EEPROM_CODEÖÐ
+
+		for(i=0;i<(LENGH/2-6);i++)				                                // Ð¡¶ËÄ£Ê½µÄu8 0x12 0x34×ª»»u16 Îª0x3412£¬¹Ê´Ë´¦Òª»»»ØÀ´
+		{
+			EEPROM_CODE[i] = (UINT16)(EEPROM_CODE[i]<<8|EEPROM_CODE[i]>>8);	
+		}
+    
+		
+		Control_PLC_End = 1;                            //PLCÉ¨ÃèÈ«¾Ö¿ØÖÆÁ¿¿ªÆô   R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          //¿ªÆôTIM1ÖÐ¶Ï 
+		
+		
+	}
+	if( R_Head == GET_IN )									        // ÉÏÎ»»ú»ñÈ¡¿ª¹ØÁ¿ÊäÈë
+	{	
+		
+		T_Head = ( GET_IN>>8 | GET_IN<<8 );
+		Buff_Tx.Lengh = ( 0x000e>>8 | 0x000e<<8 );
+		Buff_Tx.Head  =	T_Head;
+		LENGH_TX = 14;		
+		Input_Port = (UINT16)( (R8_PB_PIN_2 & 0x0F) | ((R8_PD_PIN_1<<4) & 0xF0))<<8 | (UINT16)( (R8_PD_PIN_3>>7) & 0x01 | R8_PB_PIN_0<<1 );	 
+																   // ´ÓGPIOÖÐ¶Á³ö¿ª¹ØÁ¿µÄÐÅºÅ,PB16~19 PD8~11,PD31 PB0~6
+																                              //IN     7~0   ,    15~8
+		//Input_Port = 0xFF00 | ((R8_PD_PIN_0 & 0xFC)>>2);//²¦Âë¿ª¹ØÄ£¿é²âÊÔ
+		//Input_Port = 0xFF00 | ((R8_PB_PIN_1 & 0x03)<<4 | (R8_PB_PIN_1 & 0x30)<<2 | (R8_PB_PIN_1 & 0xC0)>>6 | (R8_PD_PIN_0 & 0x03)<<2);//²¦ÂëÅÌÄ£¿é²âÊÔ
+
+		Buff_Tx.Data.IO_Data[0] = Input_Port ;
+		
+		FirstBuf_Tx[0] = Buff_Tx.Start;
+		memcpy(FirstBuf_Tx+1,P_Buff_Tx+2,LENGH_TX-2);		      //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+		FirstBuf_Tx[LENGH_TX-1] = Buff_Tx.End;
+	}
+	if( R_Head == SET_OUT )									        // ÉÏÎ»»úÉèÖÃ¿ª¹ØÁ¿Êä³ö
+	{																//ÉÏÎ»»ú·¢ËÍOUT¸ñÊ½ 7~0,15~8,23~16,31~24(Ö»ÓÐ0~21Î»ÓÐÐ§)
+																	//                0x12   34   56   78
+																	//´¢´æÔÚBuff_Rx.Data.IO_Data[0]ºÍ[1]ÖÐµÄ¸ñÊ½£¨Ð¡¶ËÄ£Ê½£¬¸ß×Ö½Ú¸ßµØÖ·£¬µÍ×Ö½ÚµÍµØÖ·£©
+																	//	Ð­ÒéÖÐµÄ0x1234	-> Buff_RxÖÐµÄ0x3412	-> 	Ð­ÒéÖÐµÄ0x1234	         
+		T_Head =  ( SET_OUT>>8 | SET_OUT<<8 );
+		Buff_Tx.Lengh = ( 0x0010>>8 | 0x0010<<8 );
+		Buff_Tx.Head  =	T_Head;
+		LENGH_TX = 16;
+		
+		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //¹Ø±ÕTIM1ÖÐ¶Ï   
+		
+		Control_PLC_End = 0;                            //PLCÉ¨ÃèÁ¢¼´ÖÕÖ¹
+						
+		memset(EEPROM_CODE,0,sizeof(EEPROM_CODE));     //PLC´úÂë»º´æÇå¿Õ
+		memset(EEPROM_BUFF,0,sizeof(EEPROM_BUFF));     //PLC¼Ä´æÆ÷»º´æÇå¿Õ
+		
+		T_Head = LOWER_ANSW;
+		
+		
+		/*´ÓÉÏÎ»»ú¹ã²¥Ö¡ÖÐÕÒ³ö±¾µØIP¶ÔÓ¦IO¶Ë¿ÚOutput_PortÖµ*/
+		/*
+		for(i = 0;i < (LENGH-4)/6;i += 3)
+		{
+			if(Buff_Rx.Data.IO_Data[i] == T_IP)
+			{
+			    Output_Port = Buff_Rx.Data.IO_Data[i+2]<<16 | (UINT32) Buff_Rx.Data.IO_Data[i+1] ;	 
+																   // ¶ÔÓ¦GPIOÖÐÒªÐ´ÈëµÄ¿ª¹ØÁ¿Êä³öÐÅºÅ£¬OUT0~21
+				break;
+			}
+		}
+		*/
+		Output_Port = Buff_Rx.Data.IO_Data[1]<<16 | (UINT32) Buff_Rx.Data.IO_Data[0] ;
+
+		SetOutput(Output_Port);
+				
+		Buff_Tx.Data.IO_Data[0] = Buff_Rx.Data.IO_Data[0] ;
+		Buff_Tx.Data.IO_Data[1] = Buff_Rx.Data.IO_Data[1] ;
+		
+		FirstBuf_Tx[0] = Buff_Tx.Start;
+		memcpy(FirstBuf_Tx+1,P_Buff_Tx+2,LENGH_TX-2);		      //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+		FirstBuf_Tx[LENGH_TX-1] = Buff_Tx.End;
 
 	}
     if( R_Head == GET_OUT )									        // ÉÏÎ»»ú»ñÈ¡¿ª¹ØÁ¿Êä³ö
 	{	
 		
-		T_Head = GET_OUT;
-		Buff_Tx.Lengh = ( 0x000a>>8 | 0x000a<<8 );
+		T_Head = ( GET_OUT>>8 | GET_OUT<<8 );
+		Buff_Tx.Lengh = ( 0x0010>>8 | 0x0010<<8 );
 		Buff_Tx.Head  =	T_Head;
-		LENGH_TX = 10;		
+		LENGH_TX = 16;		
 		Output_Port = 0xFFFFFFFF;
 		
 		for(Num=0;Num<=21;Num++)
@@ -275,25 +533,27 @@ void Data_Process()
 			if(*((UINT16 *)EEPROM_BUFF + Num + 0x30) == 1)
 			Output_Port &= ~(1<<Num);	
 		}
-		Buff_Tx.Data.IO_Data[0] = T_IP;
-		Buff_Tx.Data.IO_Data[1] =  (UINT16)Output_Port;
-	    Buff_Tx.Data.IO_Data[2] =  (UINT16)(Output_Port>>16) ;
+		Buff_Tx.Data.IO_Data[0] =  (UINT16) Output_Port;
+	    Buff_Tx.Data.IO_Data[1] =  (UINT16)(Output_Port>>16) ;
 
-		memcpy(FirstBuf_Tx,(void *)&Buff_Tx,LENGH_TX);		 //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+	    FirstBuf_Tx[0] = Buff_Tx.Start;
+		memcpy(FirstBuf_Tx+1,P_Buff_Tx+2,LENGH_TX-2);		      //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+		FirstBuf_Tx[LENGH_TX-1] = Buff_Tx.End;
 	
 	}
 	if( R_Head == SEND_IP_ID )									        // ÏÂÎ»»ú·¢ËÍ±¾µØIPºÍID
 	{
 
-		T_Head = SEND_IP_ID;
-		Buff_Tx.Lengh = ( 0x0008>>8 | 0x0008<<8 );
+		T_Head = ( SEND_IP_ID>>8 | SEND_IP_ID<<8 );
+		Buff_Tx.Lengh = ( 0x000e>>8 | 0x000e<<8 );
 	    Buff_Tx.Head  =	T_Head;
-	    LENGH_TX = 8;
+	    LENGH_TX = 14;
 	
 	    Buff_Tx.Data.IO_Data[0] =  (UINT16)IPAddr[3]<<8;
-		Buff_Tx.Data.IO_Data[1] =  (UINT16)ID_Number<<8;
 	    
-		memcpy(FirstBuf_Tx,(void *)&Buff_Tx,LENGH_TX);
+		FirstBuf_Tx[0] = Buff_Tx.Start;
+		memcpy(FirstBuf_Tx+1,P_Buff_Tx+2,LENGH_TX-2);		      //½«Buff_TxÖÐµÄÊý¾Ý¿½±´µ½½á¹¹ÌåFirstBuf_TxÖÐ£¬	×¢Òâu16µ½u8£¬0x3412 ±äÎª 0x12 0x34
+		FirstBuf_Tx[LENGH_TX-1] = Buff_Tx.End;
 		
 	}
 	if( R_Head == SET_M000 )									        // ÉÏÎ»»úÉèÖÃ¡°ÒÆÔØ³ö¡±Ä£¿éÖ´ÐÐÒÆÔØ¶¯×÷£¬M000ÎªÒÆÔØ±äÁ¿£¬Ä¬ÈÏÎª0²»Ö´ÐÐ
@@ -301,6 +561,35 @@ void Data_Process()
 		EEPROM_BUFF[0+2*0x30] = 1;					      //ÉèÖÃPLC±äÁ¿M000µÄÖµÎª1£¬PLCÒÆÔØ¶¯×÷Ö´ÐÐÍêÖ®ºó£¬M000×Ô¶¯¸´Î»Îª0
 	}
 
+	
+	if( R_Head == PLC_START )									        //ÉÏÎ»»ú¿ØÖÆÈ«²¿Æô¶¯
+	{
+		printf("START\n");
+		//PLC_PowerOn_Init();											//ÓÉÉÏÎ»»ú¿ØÖÆÉÏµç³õÊ¼»¯PLC³ÌÐò
+	}
+
+	if( R_Head == PLC_STOP )									        //ÉÏÎ»»ú¿ØÖÆÈ«²¿Í£Ö¹
+	{
+		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //¹Ø±ÕTIM1ÖÐ¶Ï   
+		
+		Control_PLC_End = 0;                            //PLCÉ¨ÃèÁ¢¼´ÖÕÖ¹
+		
+		SetOutput(0xffffffff);                          //IOÈ«²¿ÇåÁã
+				
+		memset(EEPROM_CODE,0,sizeof(EEPROM_CODE));     //PLC´úÂë»º´æÇå¿Õ
+		memset(EEPROM_BUFF,0,sizeof(EEPROM_BUFF));     //PLC¼Ä´æÆ÷»º´æÇå¿Õ
+		
+		T_Head = LOWER_ANSW;
+	}
+	
+
+	if( R_Head == TEST )
+	{
+		printf("R_Head == TEST\n");
+		CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);
+	}
+
+	
 	//´Ë´¦Ìí¼Ó³ÌÐò
 }
 
@@ -331,7 +620,9 @@ UINT8 Reverse(UINT8 a,UINT8 n )
 void GetLocal_IP_ID()                                                        
 {
 	IPAddr[3] = ((R8_PB_PIN_1 & 0x03)<<4 | (R8_PB_PIN_1 & 0x30)<<2 | (R8_PB_PIN_1 & 0xC0)>>6 | (R8_PD_PIN_0 & 0x03)<<2);
-	ID_Number = ((R8_PD_PIN_0 & 0xFC)>>2);	
+	ID_Number = ((R8_PD_PIN_0 & 0xFC)>>2);
+	MACAddr[5] = IPAddr[3];
+		
 }
 
 /*******************************************************************************
@@ -344,13 +635,67 @@ void GetLocal_IP_ID()
 void PLC_PowerOn_Init()                                                        
 {
 	UINT8 i;
-
-	CH563_EEPROM_READ ( 0,EEPROM_CODE,512-4 );                                  //  EEPROM¶ÁÈ¡µØÖ·0x0000Êý¾Ý£¬¶ÁÈ¡512-4×Ö½Úµ½EEPROM_CODEÖÐ
+    
+	  R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //¹Ø±ÕTIM1ÖÐ¶Ï   
+		
+		Control_PLC_End = 0;                            //PLCÉ¨ÃèÁ¢¼´ÖÕÖ¹
+		
+		SetOutput(0xffffffff);                          //IOÈ«²¿ÇåÁã
+				
+		memset(EEPROM_CODE,0,sizeof(EEPROM_CODE));     //PLC´úÂë»º´æÇå¿Õ
+		memset(EEPROM_BUFF,0,sizeof(EEPROM_BUFF));     //PLC¼Ä´æÆ÷»º´æÇå¿Õ
+	
+	
+	  CH563_EEPROM_READ ( 0,EEPROM_CODE,512-4 );                                  //  EEPROM¶ÁÈ¡µØÖ·0x0000Êý¾Ý£¬¶ÁÈ¡512-4×Ö½Úµ½EEPROM_CODEÖÐ
 
 		for(i=0;i<(512/2-2);i++)				                                // Ð¡¶ËÄ£Ê½µÄu8 0x12 0x34×ª»»u16 Îª0x3412£¬¹Ê´Ë´¦Òª»»»ØÀ´
 		{
 			EEPROM_CODE[i] = (UINT16)(EEPROM_CODE[i]<<8|EEPROM_CODE[i]>>8);	
-		}	
+		}
+	
+		Control_PLC_End = 1;                            //PLCÉ¨ÃèÈ«¾Ö¿ØÖÆÁ¿¿ªÆô
+    R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          //¿ªÆôTIM1ÖÐ¶Ï 
+}
+
+/*******************************************************************************
+* Function Name  : InitTIM1
+* Description    : ³õÊ¼»¯¶¨Ê±Æ÷1£¬¼°ÆäÖÐ¶ÏÅäÖÃ		5ms
+* Input          : None
+* Output         : None
+* Return         : None
+*******************************************************************************/
+void InitTIM1(void)
+{
+   
+	  R32_TMR1_CNT_END = 0x186a0 * 5;                                             //ÉèÖÃÎª5MS¶¨Ê±	
+  	R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;   	
+	  R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN;										                     //¶¨Ê±Æ÷¼ÆÊý¹¦Ê¹ÄÜ    
+	  R32_TMR1_COUNT = 0x00000000; 
+    R8_TMR1_INTER_EN |= RB_TMR_IE_CYC_END;
+    
+	  R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          /* ¿ªÆôTIM1ÖÐ¶Ï */
+    R8_INT_EN_IRQ_GLOB |= RB_IE_IRQ_GLOB;                                       /* ¿ªÆôIRQÈ«¾ÖÖÐ¶Ï */
+}
+
+
+
+void IRQ_InitPD( void )	//PD0ÎªSCL£¬PD1ÎªSDA
+{
+    R32_PD_PU  |= 0x00000001;                                                   /* GPIO D0ÉÏÀ­ÉèÖÃ£¬ÖÃ1±íÊ¾ÉÏÀ­ */ 
+    R32_PD_DIR &= ~0x00000001;                                                  /* GPIO D0·½ÏòÉèÖÃÎªÊäÈë , direction: 0=in, 1=out */
+
+			 
+	R32_PD_PU  |= 0x00000002;                                                   /* GPIO D1ÉÏÀ­ÉèÖÃ£¬ÖÃ1±íÊ¾ÉÏÀ­ */ 
+    R32_PD_DIR &= ~0x00000002;                                                  /* GPIO D1·½ÏòÉèÖÃÎªÊäÈë , direction: 0=in, 1=out */
+
+
+    R32_INT_ENABLE_PD |= 0x00000001;                                            /* GPIO D0ÖÐ¶ÏÊ¹ÄÜ £º 1-Ê¹ÄÜ£¬0-½ûÖ¹ */
+    R32_INT_MODE_PD   |= 0x00000001;                                            /* GPIO D0ÖÐ¶Ï·½Ê½ £º1-±ßÑØÖÐ¶Ï,0-µçÆ½ÖÐ¶Ï */      
+    R32_INT_POLAR_PD  |= 0x00000001;                                            /* GPIO D0ÖÐ¶Ï¼«ÐÔ £º1-ÉÏÉýÑØÖÐ¶Ï/¸ßµçÆ½£¬0-ÏÂ½µÑØÖÐ¶Ï/µÍµçÆ½ */      
+    
+    R32_INT_STATUS_PD  = 0xffffffff;                                               /* ÖÐ¶Ï±êÖ¾Ð´1ÇåÁã */
+    R8_INT_EN_IRQ_1   |= RB_IE_IRQ_PD;                                          /* GPIO D×éÖÐ¶ÏÊ¹ÄÜ */ 
+     
 }
 
 
@@ -365,37 +710,55 @@ int main( void )
 {
 
     UINT8 i = 0,Num;
-//	UINT32 Output_Port;
-//	UINT32 len;	
-//	UINT8  *p = FirstBuf_Tx;
-//	UINT8  DES_IP[4] = {192,168,1,100};                                         /* Ä¿µÄIPµØÖ· */
-//	UINT8  *ip = DES_IP;
+	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFB ,0xBB};
+	//UINT32 Output_Port;
+	UINT32 len = 12;	
+	UINT8  *p = a;
+	UINT8  DES_IP[4] = {192,168,1,2};                                         /* Ä¿µÄIPµØÖ· */
+	UINT8  *ip = DES_IP;
 
     Init_GPIO( );																//³õÊ¼»¯GPIO
-    mInitSTDIO( );                                                              /* ÎªÁËÈÃ¼ÆËã»úÍ¨¹ý´®¿Ú¼à¿ØÑÝÊ¾¹ý³Ì */
+    //mInitSTDIO( );                                                              /* ÎªÁËÈÃ¼ÆËã»úÍ¨¹ý´®¿Ú¼à¿ØÑÝÊ¾¹ý³Ì */
+	Uart1_Init( 9600);
+	
 	InitTIM1( );																//³õÊ¼»¯¶¨Ê±Æ÷1£¬ÖÐ¶ÏÖÜÆÚ5ms
-	GetLocal_IP_ID();															//»ñµÃ²¦ÂëÅÌºÍ²¦Âë¿ª¹ØÉè¶¨µÄIPºÍID
+	//GetLocal_IP_ID();															//»ñµÃ²¦ÂëÅÌºÍ²¦Âë¿ª¹ØÉè¶¨µÄIPºÍID
+
+	IRQ_InitPD( );
 
     i = CH563NET_LibInit(IPAddr,GWIPAddr,IPMask,MACAddr);                       /* ¿â³õÊ¼»¯ */
     mStopIfError(i);                                                            /* ¼ì²é´íÎó */
    
     SysTimeInit();                                                              /* ÏµÍ³¶¨Ê±Æ÷³õÊ¼»¯ */
-    InitSysHal();                                                               /* ³õÊ¼»¯ÖÐ¶Ï */
-    CH563NET_CreatUpdSocket();                                                  /* ´´½¨UDP Socket */
-
-//	PLC_PowerOn_Init();															//ÉÏµç³õÊ¼»¯PLC³ÌÐò
+    InitSysHal();                                                               /* ³õÊ¼»¯ÖÐ¶Ï */	
+	CH563NET_CreatUdpSocket();	
 
 #if CH563NET_DBG
     printf("CH563IPLibInit Success\n");
 #endif 
 
+
+   
 	while(1)
     {
         CH563NET_MainTask();                                                    /* CH563NET¿âÖ÷ÈÎÎñº¯Êý£¬ÐèÒªÔÚÖ÷Ñ­»·ÖÐ²»¶Ïµ÷ÓÃ */
         
-		if(CH563NET_QueryGlobalInt())CH563NET_HandleGlobalInt();                /* ²éÑ¯ÖÐ¶Ï£¬Èç¹ûÓÐÖÐ¶Ï£¬Ôòµ÷ÓÃÈ«¾ÖÖÐ¶Ï´¦Àíº¯Êý */
+		    if(CH563NET_QueryGlobalInt())CH563NET_HandleGlobalInt();                /* ²éÑ¯ÖÐ¶Ï£¬Èç¹ûÓÐÖÐ¶Ï£¬Ôòµ÷ÓÃÈ«¾ÖÖÐ¶Ï´¦Àíº¯Êý */
 		
-		/*ÒÔÏÂº¯ÊýÓÃÓÚÏÂÎ»»úÖ´ÐÐPLCÉ¨Ãè³ÌÐòÊ±£¬Ã¿¹ý100ºÁÃëÏòÉÏÎ»»ú·¢ËÍÒ»´Î¿ª¹ØÁ¿Êä³ö×´Ì¬*/		
+		/* 
+		if(PLC_PowerOn_Init_Flag == 1 && PLC_PowerOn_Init_Count == 1000)	  //ÉÏµçÑÓÊ±5sºó³õÊ¼»¯PLC³ÌÐò
+		{
+			CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);              // ÏòÖ¸¶¨µÄÄ¿µÄIP£¬¶Ë¿Ú·¢ËÍUDP°ü£¨¿ÉÒÔÏòÈÎÒâµÄIPºÍ¶Ë¿Ú·¢ËÍÊý¾Ý£©
+			//PLC_PowerOn_Init();
+			printf("CH563NET_SocketUdpSendTo\n");
+			PLC_PowerOn_Init_Count = 0;															
+			//PLC_PowerOn_Init_Flag = 0;
+        }
+		*/
+				
+				
+				
+				/*ÒÔÏÂº¯ÊýÓÃÓÚÏÂÎ»»úÖ´ÐÐPLCÉ¨Ãè³ÌÐòÊ±£¬Ã¿¹ý100ºÁÃëÏòÉÏÎ»»ú·¢ËÍÒ»´Î¿ª¹ØÁ¿Êä³ö×´Ì¬*/		
 		/*if(PLC_Count > 250)
 		{
 			Output_Port = 0xFFFFFFFF;

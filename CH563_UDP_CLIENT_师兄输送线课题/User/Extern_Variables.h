@@ -19,21 +19,32 @@
 #define		SET_OUT			0x00FE				//上位机设置开关量输出
 #define		GET_OUT			0x00FD				//上位机获取开关量输出
 #define		SET_M000	    0x00FC				//上位机设置“移载出”模块执行移载动作，默认不执行
+#define		PLC_START 	    0x00FB				//上位机控制PLC全部启动
+#define		PLC_STOP	    0x00FA				//上位机控制PLC全部停止
+#define		BARCODE 	    0x00B1				//下位机发送识别到的条形码
+#define		ALARM	        0x00B2				//下位机发送报警信号
 
+#define		TEST	        0x00EE				//测试
 
 /*TCP、UDP收发数据相关 */
 typedef union _BUFF_DATA
 {
-	UINT16  PLC_Cmd[100];
+	UINT16  PLC_Cmd[512];
 	UINT16  IO_Data[100];
+	UINT16  BarCode_Data[100];
 }BUFF_DATA;
 
 
 typedef struct _BUFF_UDP_DATA
 {	
-    volatile UINT16 Lengh;						//切片长度
-	volatile UINT16 Head;		                //包头 
-	BUFF_DATA       Data;
+	UINT8  Start;						//起始位
+	UINT16 Lengh;						//切片长度
+	UINT16 Packet_Flag;		            //包标记数
+	UINT16 SourSite;			        //源站点号
+	UINT16 DesSite;		                //目标站点号
+	UINT16 Head;						//包头 
+	BUFF_DATA       Data;				//数据
+	UINT8  End;						    //停止位
 }BUFF_UDP_DATA;
 extern volatile BUFF_UDP_DATA Buff_Rx;			//从上位机接收的缓存数据
 extern volatile BUFF_UDP_DATA Buff_Tx;			//发送给上位机的缓存数据
@@ -41,7 +52,7 @@ extern volatile UINT8 FirstBuf_Tx[1000];	    //定义第一层数据发送缓冲区
 extern UINT32  LENGH_TX;				        //数据处理后，Socket库函数发送给上位机所调用的字符长度
 extern UINT16  EEPROM_CODE[512]; 		        //1024字节缓存，用于存放PLC代码，在RAM中运行
 extern UINT16  EEPROM_BUFF[512]; 		        //1024字节缓存，用于存放PLC输入输出开关量状态，在RAM中运行
-extern UINT8 SocketId;                          /* 保存socket索引，可以不用定义 */
+
 
 /* PLC相关定义 */
 #define PLC_Code_Addr      0x0000					//PLC代码在EEPROM中存放的起始地址为0x0000
@@ -166,15 +177,30 @@ extern UINT8   PLC_Count;
 
 
 /* CH563相关定义 */
-extern const UINT8 MACAddr[6];                       /* CH563MAC地址 */
+extern UINT8 MACAddr[6];                             /* CH563MAC地址 */
 extern UINT8 IPAddr[4];                              /* CH563IP地址 */
 extern const UINT8 GWIPAddr[4];                      /* CH563网关 */
 extern const UINT8 IPMask[4];                        /* CH563子网掩码 */
 extern const UINT8 DESIP[4];                         /* 目的IP地址 */
 extern UINT8 ID_Number;                              /* 下位机板子编号 */
+extern UINT8 SocketId;                               /* 保存socket索引，用于与主机通信 */
 
 
-/* 外部函数声明 */
+
+extern UINT8  Uart_Buf[ 500 ];
+
+extern UINT8  PLC_PowerOn_Init_Flag;
+extern UINT32  PLC_PowerOn_Init_Count;
+
+extern UINT8  Control_PLC_End;
+
+
+/* 连接一个LED用于监控演示程序的进度,低电平LED亮 */
+#define LED                  1<<3
+
+#define LED_OUT_INIT(  )     { R32_PB_OUT |= LED; R32_PB_DIR |= LED; }          /* LED 高电平为输出方向 */
+#define LED_OUT_ACT(  )      { R32_PB_CLR |= LED; }                             /* LED 低电平驱动LED显示 */
+#define LED_OUT_INACT(  )    { R32_PB_OUT |= LED; }                             /* LED 高电平关闭LED显示 */
 
 #endif
 

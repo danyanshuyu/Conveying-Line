@@ -3,6 +3,7 @@
 #include "Extern_Variables.h"
 
 UINT16  EEPROM_BUFF[512]; 		       //1024字节缓存，在RAM中运行
+UINT8  Control_PLC_End = 1;
 
 /*下段函数用于得出PLC的值*/
 UINT16 GetValue(UINT16 Num,UINT16 type)						// 参数说明，Num：PLC变量号，type：PLC变量类型					
@@ -215,13 +216,15 @@ void Proc_plc_code()
 	bEnd = 1;												// 结尾判断指令赋1，用于程序扫描
 
 	/*下段程序用于PLC梯形图的扫描，末尾变量有效*/
-	while(bEnd)												// 如果末尾标志为1，PLC循环扫描										
+	while(bEnd== 1 && Control_PLC_End == 1)								// 如果末尾标志为1，PLC循环扫描	,全局变量Control_PLC_End可随时控制PLC启停									
 	{	pNum = (UINT16 *)pNow;								// 保存PLC代码的首地址，该地址中存放寄存器的序号
 		pNow++;										// 计算PLC代码的下一个地址，如果梯形图的指令为LD M023，发下来的指令顺序为023,LD　M，如果是计数器和定时器，还有下个地址存放次数和时间
 
 		Type = (*pNow)&0xff00;                              //获得指令类型（LD,AND,OR等）								
 		RegType = (*pNow)&0x00ff;							// 获得寄存器类型（X，Y，M等）
 		pNow++;												// 地址增加
+		
+		if(pNow == (UINT16 *)EEPROM_CODE+0x1ff) break;  //指针指向EEPROM_CODE末尾时，扫描结束
 		/*以下程序用于判断PLC指令类型*/
 		switch(Type)
 		{	case NTO:
@@ -358,7 +361,7 @@ void Proc_plc_code()
 
 			case ORB:		                               // 将两个逻辑块单元取或
 				a = stack1[point1-1];
-				b = stack1[point1-2];
+				b = stack1[point1-2]; 
 				point1--;
 				Data = a | b;
 				stack1[point1-1] = Data;
