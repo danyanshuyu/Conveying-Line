@@ -16,7 +16,7 @@
 ### ADS-LD Output File: '..\Obj\CH563.axf'
 ### ADS-LD Command File: '..\Obj\CH563.lnp'
 ### Checking for dirty Components...
-### Creating CmdFile '..\Obj\CH563.lnp', Handle=0x000002FC
+### Creating CmdFile '..\Obj\CH563.lnp', Handle=0x000007C4
 ### Writing '.lnp' file
 ### ADS-LD Command file '..\Obj\CH563.lnp' is ready.
 ### ADS-LD: About to start ADS-LD Thread.

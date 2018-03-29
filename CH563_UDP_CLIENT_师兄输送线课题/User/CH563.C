@@ -49,8 +49,8 @@ __align(4)UINT8 Mem_ArpTable[CH563NET_RAM_ARP_TABLE_SIZE];
 /* 本演示程序的相关宏 */
 #define RECE_BUF_LEN                          1600                              /* 接收缓冲区的大小 */
 /* CH563相关定义 */
-      UINT8 MACAddr[6] = {0x02,0x03,0x04,0x05,0x06,0x0a};                       /* CH563MAC地址 *///最后一位地址并不是最终结果，根据实际拨码盘上的ip更改
-      UINT8 IPAddr[4] = {192,168,1,2};                                         /* CH563IP地址 */ //最后一位地址并不是最终结果，根据实际拨码盘上的ip更改
+      UINT8 MACAddr[6] = {0x02,0x03,0x04,0x05,0x06,0x0A};                       /* CH563MAC地址 *///最后一位地址并不是最终结果，根据实际拨码盘上的ip更改
+      UINT8 IPAddr[4] = {192,168,1,10};                                         /* CH563IP地址 */ //最后一位地址并不是最终结果，根据实际拨码盘上的ip更改
 const UINT8 GWIPAddr[4] = {192,168,1,1};                                        /* CH563网关 */
 const UINT8 IPMask[4] = {255,255,255,0};                                        /* CH563子网掩码 */
 const UINT8 DESIP[4] = {192,168,1,100};                                         /* 目的IP地址——主机 */
@@ -58,23 +58,22 @@ const UINT8 DESIP[4] = {192,168,1,100};                                         
 UINT8 SocketId;                                                                 /* 保存socket索引，用于与主机通信 */
 UINT8 SocketRecvBuf[RECE_BUF_LEN];                                              /* socket接收缓冲区 */
 UINT8 FirstBuf_Rx[RECE_BUF_LEN];                                                /* 第一层缓冲区，socket库调用 */
-UINT8 SecondBuf_Rx[RECE_BUF_LEN];                                               /* 第二层缓冲区，用于保证数据完整性 */
-UINT32 Front = 0;																//SecondBuf_Rx队列当前填充起始位
+UINT8 SecondBuf_Rx[3][RECE_BUF_LEN];                                            /* 第二层缓冲区，用于保证数据完整性 */
+UINT16 Front[3] = {0,0,0};													    //SecondBuf_Rx队列当前填充起始位
 volatile BUFF_UDP_DATA Buff_Rx;			                                        //过程数据
+UINT8 PLC_Loop_Flag = 0;
+UINT8 UDP_Buff_Queue_Count = 0;
 
-/* 变量定义 */
+UINT8 SEND_STRING[ ] = { "l am uart1! \n" };
+UINT8 SEND_STRING1[ ] = { "Modem Change!\n" };
+UINT8  Uart_Buf[ 500 ];
+ 
+
+/*函数声明*/
 void UART1_SendStr( UINT8 *str );  
 void  Seril1Send( UINT8 *Data, UINT8 Num );
 UINT8  Seril1Rcv( UINT8 *buf );
 void UART1_SendByte( UINT8 dat ) ;
-
-UINT8 SEND_STRING[ ] = { "l am uart1! \n" };
-UINT8 SEND_STRING1[ ] = { "Modem Change!\n" };
-UINT8  Uart_Buf[ 500 ]; 
-
-
-
-/*函数声明*/
 void CH563NET_UdpServerRecv(struct _SCOK_INF *socinf,UINT32 ipaddr,UINT16 port,UINT8 *buf,UINT32 len);
 
 /*******************************************************************************
@@ -88,29 +87,22 @@ __irq void IRQ_Handler( void )
 {
     UINT8 RcvNum = 0;
     UINT8 ReadDat = 0;    
-	
-	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFB ,0xBB};
-	UINT32 len = 12;	
+/*	
+	UINT8 a[16]= {0xAA,0x00 ,0x10, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFC ,0x00 ,0x01 ,0x00 ,0x01 ,0xBB};
+	UINT32 len = 16;	
 	UINT8  *p = a;
-	UINT8  DES_IP[4] = {192,168,1,4};                                         /* 目的IP地址 */
+	UINT8  DES_IP[4] = {192,168,1,12};                                          //目的IP地址
 	UINT8  *ip = DES_IP;
 
 	//printf("R32_INT_FLAG=%8lx\n",R32_INT_FLAG);
-    if((R32_INT_FLAG>>8) & RB_IF_PD){                                          // PD组中断
-	
-	 
-        printf("%8lX \n", R32_INT_STATUS_PD&0xffffffff );                       //查看中断标志 
-        
-		
-		
+    if((R32_INT_FLAG>>8) & RB_IF_PD){                                          // PD组中断	 
+        printf("%8lX \n", R32_INT_STATUS_PD&0xffffffff );                       //查看中断标志 		
 		CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);		
-		Delay_ms(100);
-
-		
+		Delay_ms(100);		
 		R32_INT_STATUS_PD = 0xffffffff;                                            //中断标志写1清零 
     } 
     
-	 
+*/	 
 	if (R8_INT_FLAG_0&RB_IF_UART1){
         switch( R8_UART1_IIR & RB_IIR_INT_MASK ){
             case UART_II_MODEM_CHG :                                            /* Modem 信号变化 */
@@ -164,10 +156,8 @@ __irq void IRQ_Handler( void )
 	  if(R32_INT_FLAG & RB_IF_TMR1)                                               /* 定时器1中断 */
     {
 
-		 Proc_plc_code();                                                       /* 每过5ms执行一次PLC扫描程序 */
-		 PLC_Count++;
-			
-			PLC_PowerOn_Init_Count++;
+		 PLC_Loop_Flag = 1;														  //PLC循环扫描中断标志位，周期5ms
+
          R8_TMR1_INT_FLAG |= 0xff;                                              /* 清除定时器中断标志 */
     }
 
@@ -260,99 +250,27 @@ UINT8 CH563NET_LibInit(const UINT8 *ip,const UINT8 *gwip,const UINT8 *mask,const
 *******************************************************************************/
 void CH563NET_HandleSockInt(UINT8 sockeid,UINT8 initstat)
 {
-    UINT32 Len_First;
-	UINT8 Head;
-	UINT16 Lengh,DesSite;
-	UINT32 len;	
-	UINT8  *p = FirstBuf_Tx;
-	int i,j;
+    UINT32 len;
+    UINT32 totallen;
+    UINT8 *p = FirstBuf_Rx;
 
-    if(initstat & SINT_STAT_RECV)                                                     /* 接收中断 */
+    if(initstat & SINT_STAT_RECV)                                               /* 接收中断 */
     {
-        Len_First = CH563NET_SocketRecvLen(sockeid,NULL);                             /* 会将当前接收指针传递给precv*/
+        len = CH563NET_SocketRecvLen(sockeid,NULL);                             /* 会将当前接收指针传递给precv*/
 #if CH563NET_DBG
-        printf("Receive Len = %02x\n",Len_First);                           
+        printf("Receive Len = %02x\n",len);                           
 #endif
-
-		
-	   //SetOutput(0x00000000);
-		//return;
-
-		//UDP数据一包最大1472Bytes，所以Len_First <=1472
-		CH563NET_SocketRecv(sockeid,FirstBuf_Rx,&Len_First);                         /* 将接收缓冲区的数据读到FirstBuf_Rx中*/
-
-		memcpy(&SecondBuf_Rx[Front],FirstBuf_Rx,Len_First);							//将FirstBuf_Rx中的数据拷贝到SecondBuf_Rx中
-		
-		Front += Len_First;															//用于数据未完整时，衔接后续数据
-		
-		//数据错乱时，退出函数，重新接收数据
-		if(Front >=1600 )															//1.防止溢出错误；2.数据发送错乱且
-		{																			//连续收到数据超过1600字节时，清空缓存区		
-			memset(SecondBuf_Rx,0,sizeof(SecondBuf_Rx));      //清空SecondBuf_Rx缓存
-			Front = 0;
-			return;
-		}
-		/*以下程序用于验证数据完整性(目前仅实现了用长度判断完整性，没有验校数据正确性)*/
-		while(1) 
-		{																			
-			if(Front >= 11)
-			{
-				Head = SecondBuf_Rx[0];
-				Lengh = (SecondBuf_Rx[1]<<8|SecondBuf_Rx[2]);
-				DesSite = (SecondBuf_Rx[7]<<8|SecondBuf_Rx[8]);
-
-				//不是本机消息，直接退出函数，重新接收数据
-				if(DesSite != (UINT16)IPAddr[3] && DesSite != 0xFFFF)
-				{
-					memset(SecondBuf_Rx,0,sizeof(SecondBuf_Rx));      //清空SecondBuf_Rx缓存
-					Front = 0;
-					return;	
-				}
-				
-				for(j=0; j<Lengh; j++)
-				{
-				  if(j>0)
-				    printf(",");
-				  printf("%d",SecondBuf_Rx[j]);
-				}
-
-				//开始接收处理数据
-				if(Front >= Lengh && Head == 0xAA)
-				{					
-					Buff_Rx.Start = SecondBuf_Rx[0];
-					Buff_Rx.End = SecondBuf_Rx[Lengh-1];
-					memcpy(&Buff_Rx+2,SecondBuf_Rx+1,Lengh-2);					//将SecondBuf_Rx中除起始位和终止位的数据拷贝到结构体Buff_Rx中，	两个u8表示一个u16，例0x12 0x34（小端） 0x3412
-
-					for(i = 0;i < (Front - Lengh);i++)								//切取完整数据后，将SecondBuf_Rx后面的数据前移
-					{
-						SecondBuf_Rx[i]	= SecondBuf_Rx[i+Lengh];
-					}
-					
-					Front -= Lengh;
-
-					Data_Process();													//成功接收数据后进行处理
-
-					p = FirstBuf_Tx;												//进入循环前，p指针重新指向FirstBuf_Tx首地址
-
-					while(1)
-			        {
-			           len = LENGH_TX;
-			           CH563NET_SocketSend(sockeid,p,&len);                            // 将FirstBuf_Tx中的数据发送
-			           LENGH_TX -= len;                                                // 将总长度减去已经发送完毕的长度 
-			           p += len;                                                       // 将缓冲区指针偏移
-			           if(LENGH_TX)continue;                                           // 如果数据未发送完毕，则继续发送
-			           break;                                                          // 发送完毕，退出 
-			        }  
-				}
-				else
-				{
-					break;
-				}				
-			}
-			if(Front >= 11) continue;
-			break;
-		}	 
-		 	
+        totallen = len;
+        CH563NET_SocketRecv(sockeid,FirstBuf_Rx,&len);                                /* 将接收缓冲区的数据读到MyBuf中*/
+        while(1)
+        {
+           len = totallen;
+           CH563NET_SocketSend(sockeid,p,&len);                                 /* 将MyBuf中的数据发送 */
+           totallen -= len;                                                     /* 将总长度减去以及发送完毕的长度 */
+           p += len;                                                            /* 将缓冲区指针偏移*/
+           if(totallen)continue;                                                /* 如果数据未发送完毕，则继续发送*/
+           break;                                                               /* 发送完毕，退出 */
+        }
     }
     if(initstat & SINT_STAT_CONNECT)                                            /* TCP连接中断 */
     {
@@ -401,10 +319,13 @@ void CH563NET_HandleGlobalInt(void)
    }
    if(initstat & GINT_STAT_SOCKET)                                              /* Socket中断 */
    {
-       for(i = 0; i < CH563NET_MAX_SOCKET_NUM; i ++)                     
+	   for(i = 0; i < CH563NET_MAX_SOCKET_NUM; i ++)                     
        {
-           socketinit = CH563NET_GetSocketInt(i);                               /* 读socket中断并清零 */
-           if(socketinit)CH563NET_HandleSockInt(i,socketinit);                  /* 如果有中断则清零 */
+           socketinit = CH563NET_GetSocketInt(i);                               /* 读socket中断并清零 */		   
+           if(socketinit)
+		   {	
+				CH563NET_HandleSockInt(i,socketinit);                           /* 如果有中断则进入处理函数 */	 
+		   }
        }    
    }
 }
@@ -459,102 +380,143 @@ void CH563NET_CreatUdpSocket(void)
 }
 
 /*******************************************************************************
-* Function Name  : CH563NET_CreatUdpSocket
-* Description    : 创建UDP socket
+* Function Name  : CH563NET_UdpServerRecv
+* Description    : UDP服务器接收数据缓存函数
 * Input          : None
 * Output         : None
 * Return         : None
 *******************************************************************************/
 void CH563NET_UdpServerRecv(struct _SCOK_INF *socinf,UINT32 ipaddr,UINT16 port,UINT8 *buf,UINT32 length)
 {
-    UINT8 ip_addr[4];
-
-	UINT32 Len_First;
-	UINT8 Head;
-	UINT16 Lengh,DesSite;
-	UINT32 len;	
-	UINT8  *p = FirstBuf_Tx;
-	int i;
-    UINT8 * P_Buff_Rx = (void *)&Buff_Rx;
     
-	//printf("test\n");
-	//printf("ipaddr=%-8x port=%-8d len=%-8d socketid=%-4d\r\n",ipaddr,port,length,socinf->SockIndex);
+	int i;
+   
+   /*
+    UINT8 ip_addr[4];
+	printf("test\n");
+	printf("ipaddr=%-8x port=%-8d len=%-8d socketid=%-4d\r\n",ipaddr,port,length,socinf->SockIndex);
     for(i=0;i<4;i++){
         ip_addr[i] = ipaddr&0xff;
-        //printf("%-4d",ip_addr[i]);
+        printf("%-4d",ip_addr[i]);
         ipaddr = ipaddr>>8;    
     }
-	
+	*/
 
-	memcpy(&SecondBuf_Rx[Front],buf,length);	
-
-	Front += length;															//用于数据未完整时，衔接后续数据
-
-	    //数据错乱时，退出函数，重新接收数据
-		if(Front >=1600 )															//1.防止溢出错误；2.数据发送错乱且
-		{																			//连续收到数据超过1600字节时，清空缓存区		
-			memset(SecondBuf_Rx,0,sizeof(SecondBuf_Rx));      //清空SecondBuf_Rx缓存
-			Front = 0;
-			return;
-		}
-	
-		/*以下程序用于验证数据完整性(目前仅实现了用长度判断完整性，没有验校数据正确性)*/
-		while(1) 
-		{																			
-			if(Front >= 11)
-			{
-				
-				Head = SecondBuf_Rx[0];
-				Lengh = (SecondBuf_Rx[1]<<8|SecondBuf_Rx[2]);
-				DesSite = (SecondBuf_Rx[7]<<8|SecondBuf_Rx[8]);
-
-				//不是本机消息，直接退出函数，重新接收数据
-				if(DesSite != (UINT16)IPAddr[3] && DesSite != 0xFFFF)
-				{
-					memset(SecondBuf_Rx,0,sizeof(SecondBuf_Rx));      //清空SecondBuf_Rx缓存
-					Front = 0;
-					return;	
-				}
-
-				//开始接收处理数据
-				if(Front >= Lengh && Head == 0xAA)
-				{					
-					Buff_Rx.Start = SecondBuf_Rx[0];
-					Buff_Rx.End = SecondBuf_Rx[Lengh-1];
-					memcpy(P_Buff_Rx+2,SecondBuf_Rx+1,Lengh-2);					//将SecondBuf_Rx中除起始位和终止位的数据拷贝到结构体Buff_Rx中，	两个u8表示一个u16，例0x12 0x34（小端） 0x3412
-
-					for(i = 0;i < (Front - Lengh);i++)								//切取完整数据后，将SecondBuf_Rx后面的数据前移
-					{
-						SecondBuf_Rx[i]	= SecondBuf_Rx[i+Lengh];
-					}
-					
-					Front -= Lengh;
-
-					Data_Process();													//成功接收数据后进行处理
-
-					p = FirstBuf_Tx;												//进入循环前，p指针重新指向FirstBuf_Tx首地址
-
-					while(1)
-			        {
-			           len = LENGH_TX;
-			           CH563NET_SocketUdpSendTo( socinf->SockIndex,p,&len,ip_addr,port); // 将FirstBuf_Tx中的数据发送
-			           LENGH_TX -= len;                                                // 将总长度减去已经发送完毕的长度 
-			           p += len;                                                       // 将缓冲区指针偏移
-			           if(LENGH_TX)continue;                                           // 如果数据未发送完毕，则继续发送
-			           break;                                                          // 发送完毕，退出 
-			        }  
-				}
-				else
-				{
-					break;
-				}				
-			}
-			if(Front >= 11) continue;
+  	for(i = 0 ; i < 3 ; i++ )		   //将数据缓存到SecondBuf_Rx[3][RECE_BUF_LEN]队列中
+	{
+		if(Front[i] == 0)
+		{
+			memcpy(&SecondBuf_Rx[i][Front[i]],buf,length);
+			Front[i] += length;	
+			UDP_Buff_Queue_Count++;
 			break;
 		}
-
-    //CH563NET_SocketUdpSendTo( socinf->SockIndex,buf,&len,ip_addr,port);
+	}
+	
+	
+    //CH563NET_SocketUdpSendTo( socinf->SockIndex,buf,&length,ip_addr,port);
 }
 
+/*******************************************************************************
+* Function Name  : UDP_Buff_Process()
+* Description    : UDP数据缓存处理函数
+* Input          : None
+* Output         : None
+* Return         : None
+*******************************************************************************/
+void UDP_Buff_Process()
+{
+	UINT8 ip_addr[4]={192,168,1,2};
+
+	UINT8 Head;
+	UINT16 Length,DesSite,port = 28000;
+	UINT32 len;	
+	UINT8  *p = FirstBuf_Tx;
+	int i,j,k;
+    UINT8 * P_Buff_Rx = (void *)&Buff_Rx;
+
+	if(UDP_Buff_Queue_Count > 0)
+	{
+		for(i = 0 ; i < 3 ; i++ )  //用于处理多次发送的队列指令
+		{
+			if(Front[i] > 0 )
+			{
+				while(1)     //用于依次处理一次发送的多条指令
+				{																			
+					if(Front[i] >= 11)
+					{
+						
+						Head = SecondBuf_Rx[i][0];
+						Length = (SecondBuf_Rx[i][1]<<8|SecondBuf_Rx[i][2]);
+						DesSite = (SecondBuf_Rx[i][7]<<8|SecondBuf_Rx[i][8]); 
+						ip_addr[3] = SecondBuf_Rx[i][6]; 
+						if(ip_addr[3] == 255) 
+						{
+							port = 27000;	//主机端口号
+						}
+						else
+						{
+							port = 28000;   //从机端口号
+						} 
+			
+						//不是本机消息，直接切除此段消息包，将后面的消息包前移。一次数据可能包含多个数据包
+						if(DesSite != (UINT16)IPAddr[3] && DesSite != 0xFFFF)
+						{
+							for(j = 0;j < (Front[i] - Length);j++)			//切取完整数据后，将SecondBuf_Rx后面的数据前移
+							{
+								SecondBuf_Rx[i][j]	= SecondBuf_Rx[i][j+Length];
+							}
+							Front[i] -= Length;
+							continue;	
+						}
+			
+						//开始接收处理数据
+						if(Front[i] >= Length && Head == 0xAA)
+						{					
+							Buff_Rx.Start = SecondBuf_Rx[i][0];
+							Buff_Rx.End = SecondBuf_Rx[i][Length-1];
+							memcpy(P_Buff_Rx+2,SecondBuf_Rx[i]+1,Length-2);					//将SecondBuf_Rx[i]中除起始位和终止位的数据拷贝到结构体Buff_Rx中，	两个u8表示一个u16，例0x12 0x34（小端） 0x3412
+			
+							
+							for(j = 0;j < (Front[i] - Length);j++)								//切取完整数据后，将SecondBuf_Rx[i]后面的数据前移
+							{
+								SecondBuf_Rx[i][j]	= SecondBuf_Rx[i][j+Length];
+							}
+			
+							Data_Process();													//成功接收数据后进行处理
+			
+							//printf("UDP_Buff_Process%d\n",i);
+			
+							p = FirstBuf_Tx;												//进入循环前，p指针重新指向FirstBuf_Tx首地址
+						   
+							while(1)
+					        {
+					           len = LENGH_TX;
+							   if(len == 0)break;											 // 发送完毕，退出 
+					           k = CH563NET_SocketUdpSendTo( 0,p,&len,ip_addr,port);            // 将FirstBuf_Tx中的数据发送
+					           //printf("Error: %02X\n", k);
+							   LENGH_TX -= len;                                                // 将总长度减去已经发送完毕的长度 
+					           p += len;                                                       // 将缓冲区指针偏移
+					           //if(LENGH_TX)continue;                                           // 如果数据未发送完毕，则继续发送
+					        }
+							
+							Front[i] -= Length;  
+						}
+						else
+						{						
+							memset(SecondBuf_Rx[i],0,sizeof(SecondBuf_Rx[i]));      //清空SecondBuf_Rx[i]缓存
+							Front[i] = 0;			
+							break; //数据不够Length长度，且数据开头不是AA时，舍弃不完整的错误数据，做清空处理
+						}				
+					}
+					if(Front[i] >= 11) continue;
+					break;
+				}
+				
+				UDP_Buff_Queue_Count--;
+			}
+		}
+	}		
+}
 
 /*********************************** endfile **********************************/

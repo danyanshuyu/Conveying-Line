@@ -158,12 +158,12 @@
       <GroupNumber>1</GroupNumber>
       <FileNumber>1</FileNumber>
       <FileType>1</FileType>
-      <tvExp>1</tvExp>
+      <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>36</ColumnNumber>
+      <ColumnNumber>22</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>84</TopLine>
-      <CurrentLine>95</CurrentLine>
+      <TopLine>474</TopLine>
+      <CurrentLine>486</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\User\CH563.C</PathWithFileName>
       <FilenameWithoutPath>CH563.C</FilenameWithoutPath>
@@ -174,10 +174,10 @@
       <FileType>1</FileType>
       <tvExp>1</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>20</ColumnNumber>
+      <ColumnNumber>2</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>714</TopLine>
-      <CurrentLine>725</CurrentLine>
+      <TopLine>541</TopLine>
+      <CurrentLine>559</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\User\main.c</PathWithFileName>
       <FilenameWithoutPath>main.c</FilenameWithoutPath>
@@ -188,10 +188,10 @@
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>49</ColumnNumber>
+      <ColumnNumber>3</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>335</TopLine>
-      <CurrentLine>346</CurrentLine>
+      <TopLine>115</TopLine>
+      <CurrentLine>115</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\User\PLC.c</PathWithFileName>
       <FilenameWithoutPath>PLC.c</FilenameWithoutPath>
@@ -262,9 +262,9 @@
   </Group>
 
   <AlienFiles>
-    <PathWithFilename>C:\Users\Administrator\Desktop\CH563_UDP_CLIENT_师兄输送线课题2.3\SRC\CH563SFR.H</PathWithFilename>
-    <TopLine>216</TopLine>
-    <CurrentLine>216</CurrentLine>
+    <PathWithFilename>E:\GITHUB\Conveying-Line\CH563_UDP_CLIENT_师兄输送线课题\SRC\CH563SFR.H</PathWithFilename>
+    <TopLine>899</TopLine>
+    <CurrentLine>902</CurrentLine>
     <Constant>0</Constant>
     <WindowPosition>
       <length>0</length>
@@ -288,87 +288,35 @@
   </AlienFiles>
 
   <AlienFiles>
-    <PathWithFilename>C:\Users\Administrator\Desktop\CH563_UDP_CLIENT_师兄输送线课题2.3\User\ISPXT563.H</PathWithFilename>
+    <PathWithFilename>E:\GITHUB\Conveying-Line\CH563_UDP_CLIENT_师兄输送线课题\PUB\CH563NET.H</PathWithFilename>
+    <TopLine>397</TopLine>
+    <CurrentLine>417</CurrentLine>
+    <Constant>0</Constant>
+    <WindowPosition>
+      <length>0</length>
+      <flags>0</flags>
+      <showCmd>0</showCmd>
+      <MinPosition>
+        <xPos>0</xPos>
+        <yPos>0</yPos>
+      </MinPosition>
+      <MaxPosition>
+        <xPos>0</xPos>
+        <yPos>0</yPos>
+      </MaxPosition>
+      <NormalPosition>
+        <Top>0</Top>
+        <Left>0</Left>
+        <Right>0</Right>
+        <Bottom>0</Bottom>
+      </NormalPosition>
+    </WindowPosition>
+  </AlienFiles>
+
+  <AlienFiles>
+    <PathWithFilename>E:\GITHUB\Conveying-Line\CH563_UDP_CLIENT_师兄输送线课题\User\Extern_Variables.h</PathWithFilename>
     <TopLine>1</TopLine>
-    <CurrentLine>1</CurrentLine>
-    <Constant>0</Constant>
-    <WindowPosition>
-      <length>0</length>
-      <flags>0</flags>
-      <showCmd>0</showCmd>
-      <MinPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MinPosition>
-      <MaxPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MaxPosition>
-      <NormalPosition>
-        <Top>0</Top>
-        <Left>0</Left>
-        <Right>0</Right>
-        <Bottom>0</Bottom>
-      </NormalPosition>
-    </WindowPosition>
-  </AlienFiles>
-
-  <AlienFiles>
-    <PathWithFilename>C:\Users\Administrator\Desktop\CH563_UDP_CLIENT_师兄输送线课题2.3\SRC\SYSFREQ.H</PathWithFilename>
-    <TopLine>1</TopLine>
-    <CurrentLine>1</CurrentLine>
-    <Constant>0</Constant>
-    <WindowPosition>
-      <length>0</length>
-      <flags>0</flags>
-      <showCmd>0</showCmd>
-      <MinPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MinPosition>
-      <MaxPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MaxPosition>
-      <NormalPosition>
-        <Top>0</Top>
-        <Left>0</Left>
-        <Right>0</Right>
-        <Bottom>0</Bottom>
-      </NormalPosition>
-    </WindowPosition>
-  </AlienFiles>
-
-  <AlienFiles>
-    <PathWithFilename>C:\Users\Administrator\Desktop\CH563_UDP_CLIENT_师兄输送线课题2.3\User\Extern_Variables.h</PathWithFilename>
-    <TopLine>1</TopLine>
-    <CurrentLine>12</CurrentLine>
-    <Constant>0</Constant>
-    <WindowPosition>
-      <length>0</length>
-      <flags>0</flags>
-      <showCmd>0</showCmd>
-      <MinPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MinPosition>
-      <MaxPosition>
-        <xPos>0</xPos>
-        <yPos>0</yPos>
-      </MaxPosition>
-      <NormalPosition>
-        <Top>0</Top>
-        <Left>0</Left>
-        <Right>0</Right>
-        <Bottom>0</Bottom>
-      </NormalPosition>
-    </WindowPosition>
-  </AlienFiles>
-
-  <AlienFiles>
-    <PathWithFilename>C:\Users\Administrator\Desktop\CH563_UDP_CLIENT_师兄输送线课题2.3\PUB\CH563NET.H</PathWithFilename>
-    <TopLine>238</TopLine>
-    <CurrentLine>238</CurrentLine>
+    <CurrentLine>7</CurrentLine>
     <Constant>0</Constant>
     <WindowPosition>
       <length>0</length>
@@ -396,55 +344,43 @@
     <ActiveMDIGroup>0</ActiveMDIGroup>
     <MDIGroup>
       <Size>100</Size>
-      <ActiveTab>1</ActiveTab>
+      <ActiveTab>0</ActiveTab>
       <Documents>
         <Doc>
           <Name>..\User\main.c</Name>
-          <ColumnNumber>20</ColumnNumber>
-          <TopLine>714</TopLine>
-          <CurrentLine>725</CurrentLine>
+          <ColumnNumber>12</ColumnNumber>
+          <TopLine>784</TopLine>
+          <CurrentLine>798</CurrentLine>
         </Doc>
         <Doc>
           <Name>..\User\CH563.C</Name>
-          <ColumnNumber>36</ColumnNumber>
-          <TopLine>84</TopLine>
-          <CurrentLine>95</CurrentLine>
-        </Doc>
-        <Doc>
-          <Name>..\PUB\CH563NET.H</Name>
-          <ColumnNumber>98</ColumnNumber>
-          <TopLine>238</TopLine>
-          <CurrentLine>238</CurrentLine>
+          <ColumnNumber>34</ColumnNumber>
+          <TopLine>474</TopLine>
+          <CurrentLine>483</CurrentLine>
         </Doc>
         <Doc>
           <Name>..\User\Extern_Variables.h</Name>
-          <ColumnNumber>69</ColumnNumber>
+          <ColumnNumber>26</ColumnNumber>
           <TopLine>1</TopLine>
-          <CurrentLine>12</CurrentLine>
-        </Doc>
-        <Doc>
-          <Name>..\SRC\SYSFREQ.H</Name>
-          <ColumnNumber>0</ColumnNumber>
-          <TopLine>1</TopLine>
-          <CurrentLine>1</CurrentLine>
-        </Doc>
-        <Doc>
-          <Name>..\User\ISPXT563.H</Name>
-          <ColumnNumber>0</ColumnNumber>
-          <TopLine>1</TopLine>
-          <CurrentLine>1</CurrentLine>
+          <CurrentLine>7</CurrentLine>
         </Doc>
         <Doc>
           <Name>..\User\PLC.c</Name>
-          <ColumnNumber>49</ColumnNumber>
-          <TopLine>335</TopLine>
-          <CurrentLine>346</CurrentLine>
+          <ColumnNumber>20</ColumnNumber>
+          <TopLine>121</TopLine>
+          <CurrentLine>134</CurrentLine>
+        </Doc>
+        <Doc>
+          <Name>..\PUB\CH563NET.H</Name>
+          <ColumnNumber>82</ColumnNumber>
+          <TopLine>397</TopLine>
+          <CurrentLine>417</CurrentLine>
         </Doc>
         <Doc>
           <Name>..\SRC\CH563SFR.H</Name>
           <ColumnNumber>9</ColumnNumber>
-          <TopLine>216</TopLine>
-          <CurrentLine>216</CurrentLine>
+          <TopLine>899</TopLine>
+          <CurrentLine>902</CurrentLine>
         </Doc>
       </Documents>
     </MDIGroup>

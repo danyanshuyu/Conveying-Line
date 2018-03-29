@@ -5,6 +5,40 @@
 UINT16  EEPROM_BUFF[512]; 		       //1024×Ö½Ú»º´æ£¬ÔÚRAMÖĞÔËĞĞ
 UINT8  Control_PLC_End = 1;
 
+/*Ô¶³ÌIOÏà¹Ø*/
+UINT8  Mxxx_Send_1[16]= {0xAA,0x00,0x10,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0xFC,0x00,0x00,0x00,0x00,0xBB};
+UINT32 Mxxx_Send_1_len = 16;
+UINT8  Mxxx_Des_IP_1[4] = {192,168,1,2}; //×îºóÒ»Î»IPÔÚÎÕÊÖÊ±¸üĞÂ                                        
+UINT8  *Mxxx_Send_1_p = Mxxx_Send_1;                                       
+UINT8  *Mxxx_Des_IP_1_p = Mxxx_Des_IP_1;
+
+int Mxx_Buff_Count= -1;
+int Mxx_Buff[10];
+
+
+void SendDummy_Socket()
+{
+	int i = 0;	
+	UINT8 a[12]= {0xAA,0x00,0x10,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x00,0xBB};
+    UINT32 len = 12;	
+    UINT8  *p = a;
+    UINT8  DES_IP[4] = {192,168,1,2};           //×îºóÒ»Î»µØÖ·ÅäÖÃºó¸üĞÂ                              
+    UINT8  *ip = DES_IP;
+
+	a[5] = 0x00;
+	a[6] = IPAddr[3];
+	a[7] = 0x00;
+    a[8] = Mxxx_Des_IP_1[3];
+	DES_IP[3] = Mxxx_Des_IP_1[3];
+	printf("Send Dummy\n");
+	i = CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);//³¤Ê±¼äÎ´Í¨Ñ¶Ö®ºó£¬µÚÒ»´Î·¢ËÍÊ±£¬»á³öÏÖÎ´Öª´íÎó´úÂëFA
+														   //ÔÙ´Î·¢ËÍ£¬ºóÃæÔò²»»á³öÏÖ´íÎó£¬¹Ê´Ë´¦·¢ËÍÒ»´Î¿ÕÃüÁî
+	printf("Error: %02X\n", i);	
+}
+
+
+
+
 /*ÏÂ¶Îº¯ÊıÓÃÓÚµÃ³öPLCµÄÖµ*/
 UINT16 GetValue(UINT16 Num,UINT16 type)						// ²ÎÊıËµÃ÷£¬Num£ºPLC±äÁ¿ºÅ£¬type£ºPLC±äÁ¿ÀàĞÍ					
 {	UINT16 Offset;											// ÉùÃ÷Ò»¸öÆ«ÖÃ±äÁ¿Öµ£¬ÓÃÓÚ±£´æPLC±äÁ¿µÄÀàĞÍ
@@ -12,7 +46,7 @@ UINT16 GetValue(UINT16 Num,UINT16 type)						// ²ÎÊıËµÃ÷£¬Num£ºPLC±äÁ¿ºÅ£¬type£º
 	UINT16 Data;											// ÉùÃ÷Ò»¸ö±äÁ¿£¬ÓÃÀ´±£´æ·µ»ØÁ¿
 	UINT16V Input_Port = 0;							        // ¸Ã±äÁ¿¶ÔÓ¦Ó²¼şÖĞ¶Á³öµÄ¿ª¹ØÁ¿ÊäÈë
 
-	Offset = type;											// X1 Y2 M3 C4 T5
+	Offset = type;											// X1 Y2 M3 C4 T5(X48¸ö Y48¸ö M64¸ö C32¸ö T64¸ö)
 
 	/*ÒÔÏÂ³ÌĞòÓÃÓÚ»ñµÃ¼Ä´æÆ÷ÔÚ»º´æEEPROM_BUFFÖĞµÄ´æ´¢µØÖ·£¬¼ÆÊıÆ÷´Ó0xA0¿ªÊ¼£¬ÆäÓàÀàĞÍµÄ¼ÆÊıÆ÷ÒÔ0x30µÄ±¶Êı¿ªÊ¼*/
 
@@ -42,6 +76,8 @@ UINT16 GetValue(UINT16 Num,UINT16 type)						// ²ÎÊıËµÃ÷£¬Num£ºPLC±äÁ¿ºÅ£¬type£º
 void SetValue(UINT16 Num,UINT16 type,UINT16 Data)			// ²ÎÊıËµÃ÷£ºPLC±äÁ¿ºÅ£¬PLC±äÁ¿ÀàĞÍ£¬ÉèÖÃµÄÊı¾İ£ºÖ»ÓĞ0ºÍ1£¬1´ú±íÓĞĞ§£¬0±íÊ¾Êä³öÎŞĞ§
 {	UINT16 Offset;											// ¸Ã²ÎÊıÓÃÓÚ±£´æ±äÁ¿µÄÀàĞÍ
 	UINT16 *pAddr;											// ¸Ã²ÎÊıÓÃÓÚ±£´æ±äÁ¿µÄµØÖ·
+	UINT16 M_CurrentData;									// ÉùÃ÷Ò»¸ö±äÁ¿£¬ÓÃÀ´±£´æ·µ»ØÁ¿
+
 
 	if(type == Y)		                                    // ±äÁ¿ÀàĞÍÎª2£¨YÊä³ö£©£¬½øĞĞ²ÎÊıÉèÖÃ
 	{	if(Data == 0)										// Èç¹û¸ÃĞÅºÅÁ¿ÉèÖÃÎª0£¬½«Êä³ö¶ËÖÃ1£¬¸ßµçÆ½ÎŞĞ§				
@@ -70,6 +106,48 @@ void SetValue(UINT16 Num,UINT16 type,UINT16 Data)			// ²ÎÊıËµÃ÷£ºPLC±äÁ¿ºÅ£¬PLC±
 			else if(Num<=21)
 			R8_PA_OUT_2 &= ~(1<<(Num-20));
 		}
+	}
+
+	if(type == M && Num>=0 && Num<10)		                // ±äÁ¿ÀàĞÍÎª3£¨MÊä³ö£©£¬ÖĞ¼ä±äÁ¿µÄM000~M009¹²10¸ö×÷ÎªÔ¶³ÌIO
+	{														// ÓÃÓÚ¸øÏàÁÚPCB¿ØÖÆ°å·¢ËÍ¿ØÖÆĞÅºÅ£¨ÍøÂçUDPÍ¨Ñ¶·½Ê½ÊµÏÖ£©
+	    int i = 0,j= 0;	
+		UINT8 a[16]= {0xAA,0x00,0x10,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0xFC,0x00,0x00,0x00,0x00,0xBB};
+	    UINT32 len = 16;	
+	    UINT8  *p = a;
+	    UINT8  DES_IP[4] = {192,168,1,2};                                         
+	    UINT8  *ip = DES_IP;												
+		
+		if(Mxx_Buff_Count >= 0)
+		{
+			a[5] = 0x00;
+			a[6] = IPAddr[3];
+			a[7] = 0x00;
+    		a[8] = Mxxx_Des_IP_1[3];
+			DES_IP[3] = Mxxx_Des_IP_1[3];			
+			a[11] =  0x00;
+			a[12] =  Mxx_Buff[Mxx_Buff_Count]/10;
+		    a[13] =  0x00;
+			a[14] =  Mxx_Buff[Mxx_Buff_Count]%10;
+			
+			i = CH563NET_SocketUdpSendTo(0,p,&len,ip,28000);
+			//printf("Error: %02X\n", i);
+			Mxx_Buff_Count--;		
+		}
+
+		M_CurrentData = GetValue(Num,M);					//»ñÈ¡µ±Ç°ÖĞ¼ä±äÁ¿M_NumµÄÖµ
+		
+		if(Data != M_CurrentData)
+		{
+			//printf("Num: %d\n", Num);
+			//printf("Data: %d\n", Data);
+			SendDummy_Socket();//¿ÕÃüÁî¡£³¤Ê±¼äÎ´Í¨Ñ¶ºó£¬µÚÒ»´Î·¢ËÍ»áÊ§°Ü£¬ÒòÎªÒª»ñÈ¡Ä¿µÄµØÖ·µÄIP-MACÓ³ÉäÀ´Ìî³äARP»º´æ¡£
+			Mxx_Buff_Count++;
+			Mxx_Buff[Mxx_Buff_Count] = Num*10+Data;
+			
+			//i = CH563NET_SocketUdpSendTo(0,p,&len,ip,28000);
+			//printf("Error: %02X\n", i); 
+		}
+
 	}
 
 	Offset = type&0x000f;
@@ -147,7 +225,7 @@ void TimerProcess(UINT16 stack,UINT16 Timer_set,UINT16 Timer_num)		// ²ÎÊıËµÃ÷£º
 	Timer *pTimer ;											// ¶¨Òå¶¨Ê±Æ÷Êı¾İÖ¸Õë
 
 	pTimerValueAndFlag = (UINT32 *)(EEPROM_BUFF + 0x100);	// µÃµ½¶¨Ê±Æ÷²ÎÊı´æ·ÅµÄµØÖ·			 0X100
-															// ÓÃÓÚ¶¨Ê±Æ÷²ÎÊıÄÚ´æ
+															
 	pTimer = (Timer *)(pTimerValueAndFlag + Timer_num);		// µÃµ½²»Í¬¶¨Ê±Æ÷ºÅ¶ÔÓ¦µÄµØÖ·
 	
 	/*ÒÔÏÂ³ÌĞòÓÃÓÚÅĞ¶ÏÊÇ·ñ½øĞĞ¶¨Ê±Æ÷²Ù×÷*/
@@ -172,6 +250,15 @@ void TimerProcess(UINT16 stack,UINT16 Timer_set,UINT16 Timer_num)		// ²ÎÊıËµÃ÷£º
 	}
 	else													
 	{													
+		if(Timer_set == 0)								//¸´Î»¶¨Ê±Æ÷
+		{
+			pTimer->Flag = 0;							// ±íÊ¾½áÊø¹¤×÷
+			pTimer->Value = 0;
+			SetValue(Timer_num,5,0);
+			return;	
+		}
+		
+		
 		if(pTimer->Flag == 1)
 		{    // ¼ÌĞø¹¤×÷
 			pTimer->Value -= 5;								// ¶¨Ê±¼Ä´æÆ÷ÄÚµÄÊıÖµµİ¼õ£¬Ã¿¸öÖÜÆÚ¶¨Ê±Ê±¼äÎª5ms£¬Òò´Ë¼õ5
@@ -347,7 +434,7 @@ void Proc_plc_code()
 					else if( RegType==0x04 )				// C
 						CntProcess(Data,*pCntSet,*pNum,1);	// ¼ÆÊıÆ÷¸´Î»£¬Êä³öÎŞĞ§		
 					else if( RegType==0x05 )				// T
-						TimerProcess(0,*pTimeSet,*pNum);	// ¶¨Ê±Æ÷Í£Ö¹¹¤×÷
+						TimerProcess(0,0,*pNum);	        // ¶¨Ê±Æ÷Í£Ö¹¹¤×÷
 				}
 				break;
 

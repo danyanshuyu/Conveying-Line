@@ -13,18 +13,19 @@
 
 
 //===========================从上位机接受包头指令======================
-#define		SEND_IP_ID	    0x00A1		        //下位机发送本地IP和ID
-#define		PLC_Q			0x00A2		        //下位机执行的PLC代码
 #define		GET_IN			0x00FF				//上位机获取开关量输入
 #define		SET_OUT			0x00FE				//上位机设置开关量输出
 #define		GET_OUT			0x00FD				//上位机获取开关量输出
-#define		SET_M000	    0x00FC				//上位机设置“移载出”模块执行移载动作，默认不执行
 #define		PLC_START 	    0x00FB				//上位机控制PLC全部启动
 #define		PLC_STOP	    0x00FA				//上位机控制PLC全部停止
+#define		HANDSHAKE	    0x00EE				//上位机控制下位机之间通信握手
+#define		SEND_IP_ID	    0x00A1		        //上位机获取下位机本地IP和ID
+#define		PLC_Q			0x00A2		        //上位机发送下位机执行的PLC代码
+
+#define		SET_MXXX	    0x00FC				//下位机之间远程IO通信
 #define		BARCODE 	    0x00B1				//下位机发送识别到的条形码
 #define		ALARM	        0x00B2				//下位机发送报警信号
-
-#define		TEST	        0x00EE				//测试
+#define		HANDSUCCESS	    0x00ED				//下位机发送通信握手成功信号
 
 /*TCP、UDP收发数据相关 */
 typedef union _BUFF_DATA
@@ -32,10 +33,12 @@ typedef union _BUFF_DATA
 	UINT16  PLC_Cmd[512];
 	UINT16  IO_Data[100];
 	UINT16  BarCode_Data[100];
+	UINT16  Mxxx_Data[100];
+	UINT16  IP_Data[100];
 }BUFF_DATA;
 
 
-typedef struct _BUFF_UDP_DATA
+typedef struct _BUFF_UDP_DATA			 //考虑字节对齐，UINT8  Start;UINT8  End;应放在一起，待改进
 {	
 	UINT8  Start;						//起始位
 	UINT16 Lengh;						//切片长度
@@ -73,7 +76,6 @@ typedef struct _Timer
 
 }Timer;
 
-extern UINT8   PLC_Count;
 /*
 //缓存EEPROM_BUFF中的偏移地址	   实际EEPROM中的偏移地址
 	X	0x00							0x0000
@@ -189,18 +191,17 @@ extern UINT8 SocketId;                               /* 保存socket索引，用于与主
 
 extern UINT8  Uart_Buf[ 500 ];
 
-extern UINT8  PLC_PowerOn_Init_Flag;
-extern UINT32  PLC_PowerOn_Init_Count;
-
 extern UINT8  Control_PLC_End;
 
+extern UINT8  PLC_Loop_Flag;
+extern UINT8  UDP_Buff_Queue_Count;
 
-/* 连接一个LED用于监控演示程序的进度,低电平LED亮 */
-#define LED                  1<<3
 
-#define LED_OUT_INIT(  )     { R32_PB_OUT |= LED; R32_PB_DIR |= LED; }          /* LED 高电平为输出方向 */
-#define LED_OUT_ACT(  )      { R32_PB_CLR |= LED; }                             /* LED 低电平驱动LED显示 */
-#define LED_OUT_INACT(  )    { R32_PB_OUT |= LED; }                             /* LED 高电平关闭LED显示 */
+/*远程IO相关*/
+extern UINT8 Mxxx_Send_1[16];
+extern UINT32 Mxxx_Send_1_len;
+extern UINT8  Mxxx_Des_IP_1[4];                                         
+
 
 #endif
 

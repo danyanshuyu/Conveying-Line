@@ -22,20 +22,20 @@
 /* 变量定义 */
 volatile BUFF_UDP_DATA Buff_Tx;			                                        //从上位机接收的缓存数据
 volatile UINT8 FirstBuf_Tx[1000];												//定义第一层数据发送缓冲区
-UINT32  LENGH_TX;														//数据处理后，Socket库函数发送给上位机所调用的字符长度
+UINT32  LENGH_TX = 0;														//数据处理后，Socket库函数发送给上位机所调用的字符长度
 UINT16  EEPROM_CODE[512]; 		                                        //1024字节缓存，用于存放PLC代码，在RAM中运行
-UINT8   PLC_Count = 0;													//PLC扫描时间计数，满足次数时，向上位机发送一次开关量输出状态
 
 
-UINT8  PLC_PowerOn_Init_Flag = 1;
-UINT32  PLC_PowerOn_Init_Count = 0;
 
 /* 函数声明 */
 UINT8 Reverse(UINT8 a,UINT8 n );
 void BarCode_Upload(UINT8 RcvNUM);
 void SetOutput(UINT32 Value);
-void PLC_PowerOn_Init();	
-
+void PLC_PowerOn_Init();
+void SendHandShake(UINT8 Last_IP);
+void HandShakeSuccess();
+void SendHeartbeatPacket();	
+void SendDummy_Socket();
 /*******************************************************************************
 * Function Name  : Init_GPIO
 * Description    : 为开关量输入输出初始化GPIO	(22+20+32)=74
@@ -414,14 +414,9 @@ void Data_Process()
 	UINT32  Output_Port = 0x00000000;								// 该变量对应写入的开关量输出
 	int i,Num,j;
 	UINT8 * P_Buff_Tx = (void *)&Buff_Tx;							//定义一个指向结构体Buff_Tx起始地址的指针
+	UINT16  M_Num;													//远程IO号
+	UINT16  M_Data;													//远程IO值
 
-	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFB ,0xBB};
-	UINT32 len = 12;	
-	UINT8  *p = a;
-	UINT8  DES_IP[4] = {192,168,1,4};                                         /* 目的IP地址 */
-	UINT8  *ip = DES_IP;
-
-	
 	Buff_Tx.Start = 0xAA;
 	Buff_Tx.Packet_Flag = 0x0000;
 	Buff_Tx.SourSite = T_IP;
@@ -431,7 +426,7 @@ void Data_Process()
 
     if( R_Head == PLC_Q )									        // 接受到的报文头为 PLC代码
 	{	
-		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //关闭TIM1中断   
+		R8_TMR1_INTER_EN &= ~RB_TMR_IE_CYC_END;										  //失能定时器中断   
 		
 		Control_PLC_End = 0;                            //PLC扫描立即终止
 		
@@ -447,7 +442,7 @@ void Data_Process()
 		CH563_EEPROM_READ ( 0,EEPROM_CODE,LENGH-12 );                            //  EEPROM读取地址0x0000数据，读取LENGH-12字节到EEPROM_CODE中
 
 		for(i=0;i<(LENGH/2-6);i++)				                                // 小端模式的u8 0x12 0x34转换u16 为0x3412，故此处要换回来
-		{
+		{						  
 			EEPROM_CODE[i] = (UINT16)(EEPROM_CODE[i]<<8|EEPROM_CODE[i]>>8);	
 		}
     
@@ -485,7 +480,7 @@ void Data_Process()
 		Buff_Tx.Head  =	T_Head;
 		LENGH_TX = 16;
 		
-		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //关闭TIM1中断   
+		R8_TMR1_INTER_EN &= ~RB_TMR_IE_CYC_END;										  //失能定时器中断   
 		
 		Control_PLC_End = 0;                            //PLC扫描立即终止
 						
@@ -556,21 +551,25 @@ void Data_Process()
 		FirstBuf_Tx[LENGH_TX-1] = Buff_Tx.End;
 		
 	}
-	if( R_Head == SET_M000 )									        // 上位机设置“移载出”模块执行移载动作，M000为移载变量，默认为0不执行
+	if( R_Head == SET_MXXX )									  // 远程IO控制，接收其他控制板发来的MXXX的值，XXX为000~009
 	{
-		EEPROM_BUFF[0+2*0x30] = 1;					      //设置PLC变量M000的值为1，PLC移载动作执行完之后，M000自动复位为0
+		M_Num = (Buff_Rx.Data.Mxxx_Data[0]>>8 | Buff_Rx.Data.Mxxx_Data[0]<<8) ;
+		M_Data = (Buff_Rx.Data.Mxxx_Data[1]>>8 | Buff_Rx.Data.Mxxx_Data[1]<<8) ;
+		
+		printf("SET_MXXX %d %d\n",M_Num,M_Data);
+		EEPROM_BUFF[M_Num+2*0x30] = M_Data;					      
 	}
 
 	
 	if( R_Head == PLC_START )									        //上位机控制全部启动
 	{
-		printf("START\n");
-		//PLC_PowerOn_Init();											//由上位机控制上电初始化PLC程序
+		//printf("START\n");
+		PLC_PowerOn_Init(); 											//由上位机控制上电初始化PLC程序
 	}
 
 	if( R_Head == PLC_STOP )									        //上位机控制全部停止
 	{
-		R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //关闭TIM1中断   
+		R8_TMR1_INTER_EN &= ~RB_TMR_IE_CYC_END;							//失能定时器中断   
 		
 		Control_PLC_End = 0;                            //PLC扫描立即终止
 		
@@ -583,14 +582,71 @@ void Data_Process()
 	}
 	
 
-	if( R_Head == TEST )
+	if( R_Head == HANDSHAKE )
 	{
-		printf("R_Head == TEST\n");
-		CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);
+		//printf("R_Head == HANDSHAKE\n");
+		SendHandShake((UINT8)(Buff_Rx.Data.IP_Data[0]>>8));
 	}
-
+	
+	if( R_Head == HANDSUCCESS )
+	{
+		//printf("R_Head == HANDSUCCESS\n");
+		HandShakeSuccess();
+	}
+	
 	
 	//此处添加程序
+}
+
+
+/*******************************************************************************
+* Function Name  : SendHandShake
+* Description    : 上位机发送握手指令，使该下位机和目标下位机通信
+* Input          : 目标下位机最后一位IP地址
+* Output         : None
+* Return         : None
+*******************************************************************************/
+void SendHandShake(UINT8 Last_IP)
+{
+	
+	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xED ,0xBB};
+	UINT32 len = 12;	
+	UINT8  *p = a;
+	UINT8  DES_IP[4] = {192,168,1,2};                                         //最后一位IP地址待传入
+	UINT8  *ip = DES_IP;
+
+	DES_IP[3] =	Last_IP;
+	Mxxx_Des_IP_1[3] = Last_IP;
+	a[5] = 0x00;
+	a[6] = IPAddr[3];
+	a[7] = 0x00;
+    a[8] = Last_IP;
+
+	CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);
+	
+}
+
+/*******************************************************************************
+* Function Name  : HandShakeSuccess
+* Description    : 下位机发送握手成功信号，告知上位机
+* Input          : None
+* Output         : None
+* Return         : None
+*******************************************************************************/
+void HandShakeSuccess()
+{
+	
+	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xED ,0xBB};
+	UINT32 len = 12;	
+	UINT8  *p = a;
+	UINT8  DES_IP[4] = {192,168,1,100};                                         
+	UINT8  *ip = DES_IP;
+
+	a[5] = 0x00;
+	a[6] = IPAddr[3];
+
+	CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,27000);
+	
 }
 
 /*******************************************************************************
@@ -636,7 +692,7 @@ void PLC_PowerOn_Init()
 {
 	UINT8 i;
     
-	  R8_INT_EN_IRQ_0 &= ~RB_IE_IRQ_TMR1;                                          //关闭TIM1中断   
+	  R8_TMR1_INTER_EN &= ~RB_TMR_IE_CYC_END;										  //失能定时器中断   
 		
 		Control_PLC_End = 0;                            //PLC扫描立即终止
 		
@@ -654,7 +710,8 @@ void PLC_PowerOn_Init()
 		}
 	
 		Control_PLC_End = 1;                            //PLC扫描全局控制量开启
-    R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          //开启TIM1中断 
+    
+	 R8_TMR1_INTER_EN |= RB_TMR_IE_CYC_END;										  //使能定时器中断 
 }
 
 /*******************************************************************************
@@ -669,17 +726,15 @@ void InitTIM1(void)
    
 	  R32_TMR1_CNT_END = 0x186a0 * 5;                                             //设置为5MS定时	
   	R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;   	
-	  R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN;										                     //定时器计数功使能    
+	  R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN;										  //定时器计数功使能    
 	  R32_TMR1_COUNT = 0x00000000; 
-    R8_TMR1_INTER_EN |= RB_TMR_IE_CYC_END;
-    
-	  R8_INT_EN_IRQ_0 |= RB_IE_IRQ_TMR1;                                          /* 开启TIM1中断 */
-    R8_INT_EN_IRQ_GLOB |= RB_IE_IRQ_GLOB;                                       /* 开启IRQ全局中断 */
+    R8_TMR1_INTER_EN |= RB_TMR_IE_CYC_END;										  //使能定时器中断
+    //R8_INT_EN_IRQ_GLOB |= RB_IE_IRQ_GLOB;                                       /* 开启IRQ全局中断 */
 }
 
 
-
-void IRQ_InitPD( void )	//PD0为SCL，PD1为SDA
+/*PD0外部中断测试*/
+void IRQ_InitPD( void )	
 {
     R32_PD_PU  |= 0x00000001;                                                   /* GPIO D0上拉设置，置1表示上拉 */ 
     R32_PD_DIR &= ~0x00000001;                                                  /* GPIO D0方向设置为输入 , direction: 0=in, 1=out */
@@ -710,21 +765,15 @@ int main( void )
 {
 
     UINT8 i = 0,Num;
-	UINT8 a[12]= {0xAA,0x00 ,0x0C, 0x00 ,0x00 ,0xFF ,0xFF ,0xFF ,0xFF ,0x00 ,0xFB ,0xBB};
-	//UINT32 Output_Port;
-	UINT32 len = 12;	
-	UINT8  *p = a;
-	UINT8  DES_IP[4] = {192,168,1,2};                                         /* 目的IP地址 */
-	UINT8  *ip = DES_IP;
 
     Init_GPIO( );																//初始化GPIO
     //mInitSTDIO( );                                                              /* 为了让计算机通过串口监控演示过程 */
 	Uart1_Init( 9600);
 	
 	InitTIM1( );																//初始化定时器1，中断周期5ms
-	//GetLocal_IP_ID();															//获得拨码盘和拨码开关设定的IP和ID
+	GetLocal_IP_ID();															//获得拨码盘和拨码开关设定的IP和ID
 
-	IRQ_InitPD( );
+	//IRQ_InitPD( );
 
     i = CH563NET_LibInit(IPAddr,GWIPAddr,IPMask,MACAddr);                       /* 库初始化 */
     mStopIfError(i);                                                            /* 检查错误 */
@@ -737,59 +786,21 @@ int main( void )
     printf("CH563IPLibInit Success\n");
 #endif 
 
-
-   
 	while(1)
     {
         CH563NET_MainTask();                                                    /* CH563NET库主任务函数，需要在主循环中不断调用 */
         
-		    if(CH563NET_QueryGlobalInt())CH563NET_HandleGlobalInt();                /* 查询中断，如果有中断，则调用全局中断处理函数 */
+		if(CH563NET_QueryGlobalInt())CH563NET_HandleGlobalInt();                /* 查询中断，如果有中断，则调用全局中断处理函数 */
 		
-		/* 
-		if(PLC_PowerOn_Init_Flag == 1 && PLC_PowerOn_Init_Count == 1000)	  //上电延时5s后初始化PLC程序
+		if(PLC_Loop_Flag == 1)
 		{
-			CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,28000);              // 向指定的目的IP，端口发送UDP包（可以向任意的IP和端口发送数据）
-			//PLC_PowerOn_Init();
-			printf("CH563NET_SocketUdpSendTo\n");
-			PLC_PowerOn_Init_Count = 0;															
-			//PLC_PowerOn_Init_Flag = 0;
-        }
-		*/
-				
-				
-				
-				/*以下函数用于下位机执行PLC扫描程序时，每过100毫秒向上位机发送一次开关量输出状态*/		
-		/*if(PLC_Count > 250)
-		{
-			Output_Port = 0xFFFFFFFF;
-			for(Num=0;Num<=21;Num++)
-			{
-				if(*((UINT16 *)EEPROM_BUFF + Num + 0x30) == 1)
-				Output_Port &= ~(1<<Num);	
-			}
-			Buff_Tx.Lengh = ( 0x0008>>8 | 0x0008<<8 );
-		    Buff_Tx.Head  =	( GET_OUT>>8 | GET_OUT<<8 );
-		    LENGH_TX = 8;
-			Buff_Tx.Data.IO_Data[0] =  (UINT16)(Output_Port>>16)>>8 | (UINT16)(Output_Port>>16)<<8 ;
-		    Buff_Tx.Data.IO_Data[1] =  (UINT16)Output_Port>>8 | (UINT16)Output_Port<<8 ;
+			Proc_plc_code();                                                     /* 每过5ms执行一次PLC扫描程序 */
 
-			memcpy(FirstBuf_Tx,(void *)&Buff_Tx,LENGH_TX);
-
-			p = FirstBuf_Tx;												//进入循环前，p指针重新指向FirstBuf_Tx首地址
-
-			while(1)
-	        {
-	           len = LENGH_TX;
-	           //CH563NET_SocketSend(SocketId,p,&len);                            // 将FirstBuf_Tx中的数据发送(只向创建socket时指定的目标IP和端口发送数据)
-			   CH563NET_SocketUdpSendTo(SocketId,p,&len,ip,27000);               // 向指定的目的IP，端口发送UDP包（可以向任意的IP和端口发送数据）
-	           LENGH_TX -= len;                                                // 将总长度减去已经发送完毕的长度 
-	           p += len;                                                       // 将缓冲区指针偏移
-	           if(LENGH_TX)continue;                                           // 如果数据未发送完毕，则继续发送
-	           break;                                                          // 发送完毕，退出 
-	        } 
-			
-			PLC_Count = 0;
-		}*/ 
+			PLC_Loop_Flag = 0;
+		}
+		
+		UDP_Buff_Process();
+		
     }
 }
 
